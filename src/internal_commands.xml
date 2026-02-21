@@ -5,7 +5,7 @@
     <token name="exit" help="Exit the management session." cmd="cmd_exit_exec"/>
     <token name="end" help="Terminate configuration session." cmd="cmd_end"/>
     <token name="list" help="Print command list." cmd="cmd_list"/>
-    <token name="show" help="Show information about the system.">
+    <token name="show" help="Show information about the system." pipeable="true">
       <token name="running" argument="configuration" help="Show running configuration." cmd="cmd_show_config">
         <token name="format" help="Configuration format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
@@ -178,7 +178,7 @@
     <token name="list" help="Print command list." cmd="cmd_list"/>
     <token name="pwd" help="Display current mode path." cmd="cmd_pwd"/>
     <token name="top" help="Return to top-level configuration mode." cmd="cmd_top"/>
-    <token name="show" help="Show information about the system.">
+    <token name="show" help="Show information about the system." pipeable="true">
       <token name="candidate" argument="configuration" help="Show candidate configuration." cmd="cmd_show_config">
         <token name="format" help="Configuration format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
@@ -202,6 +202,15 @@
       </token>
       <token name="changes" help="Show configuration changes." cmd="cmd_show_config_changes">
       </token>
+    </token>
+  </tree>
+
+  <tree name="pipe">
+    <token name="include" help="Keep lines matching pattern">
+      <token name="pattern" argument="pattern" kind="string" help="Pattern to match" cmd="pipe_include"/>
+    </token>
+    <token name="exclude" help="Remove lines matching pattern">
+      <token name="pattern" argument="pattern" kind="string" help="Pattern to exclude" cmd="pipe_exclude"/>
     </token>
   </tree>
 </cli>

@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: MIT
 //
 
+use std::io::Write;
+
 use indextree::{Arena, NodeId};
 use yang4::schema::SchemaNode;
 
@@ -17,6 +19,7 @@ pub struct Commands {
     pub config_root_yang: NodeId,
     pub config_root_internal: NodeId,
     pub config_dflt_internal: NodeId,
+    pub pipe_root: NodeId,
 }
 
 pub struct Token {
@@ -26,6 +29,7 @@ pub struct Token {
     pub argument: Option<String>,
     pub action: Option<Action>,
     pub node_update: bool,
+    pub pipeable: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -37,6 +41,7 @@ pub enum TokenKind {
 pub enum Action {
     Callback(Callback),
     ConfigEdit(SchemaNode<'static>),
+    PipeCallback(PipeCallback),
 }
 
 type Callback = fn(
@@ -44,6 +49,12 @@ type Callback = fn(
     session: &mut Session,
     args: ParsedArgs,
 ) -> Result<bool, String>;
+
+/// Factory function that wraps a downstream writer with a pipe-stage filter.
+pub type PipeCallback = fn(
+    downstream: Box<dyn Write + Send>,
+    args: ParsedArgs,
+) -> Box<dyn Write + Send>;
 
 // ===== impl Commands =====
 
@@ -54,6 +65,7 @@ impl Commands {
         let config_dflt_internal = arena.new_node(None);
         let config_root_yang = arena.new_node(None);
         let config_root_internal = arena.new_node(None);
+        let pipe_root = arena.new_node(None);
 
         Commands {
             arena,
@@ -61,6 +73,7 @@ impl Commands {
             config_root_yang,
             config_root_internal,
             config_dflt_internal,
+            pipe_root,
         }
     }
 
@@ -102,6 +115,7 @@ impl Token {
             argument: argument.map(|s| s.into()),
             action,
             node_update,
+            pipeable: false,
         }
     }
 

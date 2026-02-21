@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: MIT
 //
 
+use std::io::{self, Write};
+
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use indextree::NodeId;
@@ -20,7 +22,6 @@ use crate::{YANG_CTX, token_yang};
 
 static DEFAULT_HOSTNAME: &str = "holo";
 
-#[derive(Debug)]
 pub struct Session {
     hostname: String,
     prompt: String,
@@ -29,6 +30,7 @@ pub struct Session {
     running: DataTree<'static>,
     candidate: Option<DataTree<'static>>,
     grpc_client: GrpcClient,
+    writer: Box<dyn Write + Send>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, EnumAsInner)]
@@ -81,6 +83,7 @@ impl Session {
             running,
             candidate: None,
             grpc_client,
+            writer: Box::new(io::stdout()),
         }
     }
 
@@ -100,6 +103,14 @@ impl Session {
 
     pub fn use_pager(&self) -> bool {
         self.use_pager
+    }
+
+    pub fn writer(&mut self) -> &mut dyn Write {
+        self.writer.as_mut()
+    }
+
+    pub fn set_writer(&mut self, writer: Box<dyn Write + Send>) {
+        self.writer = writer;
     }
 
     fn update_prompt(&mut self) {

@@ -5,8 +5,8 @@
 //
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
-use std::process::{Child, Command, Stdio};
+use std::fmt::Write as _;
+use std::io::Write;
 
 use indextree::NodeId;
 use prettytable::{Table, format, row};
@@ -19,6 +19,7 @@ use yang4::schema::SchemaNodeKind;
 
 use crate::YANG_CTX;
 use crate::grpc::proto;
+use crate::output::FilterWriter;
 use crate::parser::ParsedArgs;
 use crate::session::{CommandMode, ConfigurationType, Session};
 use crate::token::{Commands, TokenKind};
@@ -220,9 +221,14 @@ impl<'a> YangTableBuilder<'a> {
         let values = Vec::new();
         Self::show_path(&mut table, dnode, &self.paths, values);
 
-        // Print the table to stdout.
-        if let Err(error) = page_table(self.session, &table) {
-            println!("% failed to display data: {}", error);
+        // Write the table to the session writer.
+        if !table.is_empty() {
+            let mut w = self.session.writer();
+            if let Err(error) = table.print(&mut w) {
+                println!("% failed to display data: {}", error);
+            } else if let Err(error) = writeln!(self.session.writer()) {
+                println!("% failed to display data: {}", error);
+            }
         }
 
         Ok(())
@@ -242,66 +248,6 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
     }
 
     None
-}
-
-fn pager() -> Result<Child, std::io::Error> {
-    Command::new("less")
-        // Exit immediately if the data fits on one screen.
-        .arg("-F")
-        // Do not clear the screen on exit.
-        .arg("-X")
-        .stdin(Stdio::piped())
-        .spawn()
-}
-
-fn page_output(session: &Session, data: &str) -> Result<(), std::io::Error> {
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(data.as_bytes())?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the data directly to the console.
-        println!("{}", data);
-    }
-
-    Ok(())
-}
-
-fn page_table(session: &Session, table: &Table) -> Result<(), std::io::Error> {
-    if table.is_empty() {
-        return Ok(());
-    }
-
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Print the table.
-        let mut output = Vec::new();
-        table.print(&mut output)?;
-        writeln!(output)?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(&output)?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the table directly to the console.
-        table.printstd();
-        println!();
-    }
-
-    Ok(())
 }
 
 fn fetch_data(
@@ -644,7 +590,7 @@ pub fn cmd_show_config(
         Some(_) => panic!("unknown format"),
         None => cmd_show_config_cmds(config, with_defaults),
     };
-    if let Err(error) = page_output(session, &data) {
+    if let Err(error) = write!(session.writer(), "{}", data) {
         println!("% failed to print configuration: {}", error)
     }
 
@@ -662,12 +608,14 @@ pub fn cmd_show_config_changes(
     let candidate = cmd_show_config_cmds(candidate, false);
 
     let diff = TextDiff::from_lines(&running, &candidate);
-    print!(
-        "{}",
-        diff.unified_diff()
-            .context_radius(9)
-            .header("running configuration", "candidate configuration")
-    );
+    let diff_str = diff
+        .unified_diff()
+        .context_radius(9)
+        .header("running configuration", "candidate configuration")
+        .to_string();
+    if let Err(error) = write!(session.writer(), "{}", diff_str) {
+        println!("% failed to print configuration: {}", error)
+    }
 
     Ok(false)
 }
@@ -691,7 +639,7 @@ pub fn cmd_show_state(
     match session.get(proto::get_request::DataType::State, format, false, xpath)
     {
         Ok(proto::data_tree::Data::DataString(data)) => {
-            if let Err(error) = page_output(session, &data) {
+            if let Err(error) = write!(session.writer(), "{}", data) {
                 println!("% failed to print state data: {}", error)
             }
         }
@@ -706,7 +654,7 @@ pub fn cmd_show_state(
 
 pub fn cmd_show_yang_modules(
     _commands: &Commands,
-    _session: &mut Session,
+    session: &mut Session,
     _args: ParsedArgs,
 ) -> Result<bool, String> {
     // Create the table
@@ -731,11 +679,24 @@ pub fn cmd_show_yang_modules(
         ]);
     }
 
-    // Print the table to stdout
-    println!(" Flags: I - Implemented");
-    println!();
-    table.printstd();
-    println!();
+    // Write the table to the session writer.
+    let w = session.writer();
+    if let Err(error) = writeln!(w, " Flags: I - Implemented") {
+        println!("% failed to display data: {}", error);
+        return Ok(false);
+    }
+    if let Err(error) = writeln!(w) {
+        println!("% failed to display data: {}", error);
+        return Ok(false);
+    }
+    let mut w = session.writer();
+    if let Err(error) = table.print(&mut w) {
+        println!("% failed to display data: {}", error);
+        return Ok(false);
+    }
+    if let Err(error) = writeln!(session.writer()) {
+        println!("% failed to display data: {}", error);
+    }
 
     Ok(false)
 }
@@ -1007,7 +968,7 @@ pub fn cmd_show_ospf_interface_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -1188,7 +1149,7 @@ pub fn cmd_show_ospf_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -1509,7 +1470,7 @@ pub fn cmd_show_rip_interface_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -1601,7 +1562,7 @@ pub fn cmd_show_rip_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -1764,7 +1725,7 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -1941,7 +1902,7 @@ pub fn cmd_show_mpls_ldp_peer_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -2070,4 +2031,22 @@ pub fn cmd_clear_isis_database(
         .map_err(|error| format!("% failed to invoke RPC: {}", error))?;
 
     Ok(false)
+}
+
+// ===== pipe commands =====
+
+pub fn pipe_include(
+    downstream: Box<dyn Write + Send>,
+    mut args: ParsedArgs,
+) -> Box<dyn Write + Send> {
+    let pattern = get_arg(&mut args, "pattern");
+    Box::new(FilterWriter::new(downstream, pattern, true))
+}
+
+pub fn pipe_exclude(
+    downstream: Box<dyn Write + Send>,
+    mut args: ParsedArgs,
+) -> Box<dyn Write + Send> {
+    let pattern = get_arg(&mut args, "pattern");
+    Box::new(FilterWriter::new(downstream, pattern, false))
 }

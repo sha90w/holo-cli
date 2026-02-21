@@ -18,6 +18,14 @@ pub struct ParsedCommand {
     pub negate: bool,
     pub token_id: NodeId,
     pub args: ParsedArgs,
+    #[new(default)]
+    pub pipe_stages: Vec<ParsedPipeStage>,
+}
+
+#[derive(Debug)]
+pub struct ParsedPipeStage {
+    pub token_id: NodeId,
+    pub args: ParsedArgs,
 }
 
 pub type ParsedArgs = VecDeque<(String, String)>;
@@ -29,7 +37,7 @@ pub fn normalize_input_line(line: &str) -> Option<String> {
     // TODO: allow "!" within user input like interface descriptions
     let line = line.split('!').next()?;
 
-    // Remove redundant whitespaces.
+    // Remove redundant whitespaces while preserving '|' separators.
     let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
 
     // Handle empty input.
@@ -168,44 +176,99 @@ pub fn parse_command(
     commands: &Commands,
     line: &str,
 ) -> Result<ParsedCommand, ParserError> {
+    // Split on '|' to separate the main command from pipe stages.
+    let (main_line, pipe_lines) = split_pipe(line);
+
     let orig_mode = session.mode().clone();
     let wd_token_id = orig_mode.token(commands);
 
-    let orig_ret = parse_command_try(session, commands, wd_token_id, line);
-    if orig_ret.is_ok() {
-        return orig_ret;
-    }
+    let orig_ret =
+        parse_command_try(session, commands, wd_token_id, &main_line);
 
-    // Back-tracking: check if the command is present in upper CLI nodes.
-    let mut token_id_child = wd_token_id;
-    for token_id in wd_token_id.ancestors(&commands.arena) {
-        // Update CLI node when traversing a YANG list.
-        if let Some(token) = commands.get_opt_token(token_id)
-            && token.node_update
-        {
-            session.mode_config_exit();
-        }
-        // Ignore list keys that can match on everything.
-        match commands.get_opt_token(token_id_child) {
-            Some(token_child) => {
-                token_id_child = token_id;
-                if token_child.kind != TokenKind::Word {
-                    continue;
+    let mut pcmd = match orig_ret {
+        Ok(pcmd) => pcmd,
+        Err(orig_err) => {
+            // Back-tracking: check if the command is present in upper CLI
+            // nodes.
+            let mut token_id_child = wd_token_id;
+            let mut found = None;
+            for token_id in wd_token_id.ancestors(&commands.arena) {
+                // Update CLI node when traversing a YANG list.
+                if let Some(token) = commands.get_opt_token(token_id)
+                    && token.node_update
+                {
+                    session.mode_config_exit();
+                }
+                // Ignore list keys that can match on everything.
+                match commands.get_opt_token(token_id_child) {
+                    Some(token_child) => {
+                        token_id_child = token_id;
+                        if token_child.kind != TokenKind::Word {
+                            continue;
+                        }
+                    }
+                    None => {
+                        break;
+                    }
+                }
+
+                // Try the same command in this CLI node.
+                let ret =
+                    parse_command_try(session, commands, token_id, &main_line);
+                if ret.is_ok() {
+                    found = ret.ok();
+                    break;
                 }
             }
-            None => {
-                break;
+
+            match found {
+                Some(pcmd) => pcmd,
+                None => {
+                    // Restore original CLI node and return the original error.
+                    session.mode_set(orig_mode);
+                    return Err(orig_err);
+                }
             }
         }
+    };
 
-        // Try the same command in this CLI node.
-        let ret = parse_command_try(session, commands, token_id, line);
-        if ret.is_ok() {
-            return ret;
+    // Validate and parse pipe stages (if any).
+    if !pipe_lines.is_empty() {
+        // Reject pipes on non-pipeable commands.
+        if !is_pipeable(commands, pcmd.token_id) {
+            return Err(ParserError::NoMatch(line.to_owned()));
+        }
+
+        for pipe_line in &pipe_lines {
+            let pipe_cmd = parse_command_try(
+                session,
+                commands,
+                commands.pipe_root,
+                pipe_line,
+            )?;
+            pcmd.pipe_stages.push(ParsedPipeStage {
+                token_id: pipe_cmd.token_id,
+                args: pipe_cmd.args,
+            });
         }
     }
 
-    // Restore original CLI node and return the original error.
-    session.mode_set(orig_mode);
-    orig_ret
+    Ok(pcmd)
+}
+
+/// Returns `true` if the token or any of its ancestors has `pipeable = true`.
+pub fn is_pipeable(commands: &Commands, token_id: NodeId) -> bool {
+    std::iter::once(token_id)
+        .chain(token_id.ancestors(&commands.arena))
+        .filter_map(|id| commands.get_opt_token(id))
+        .any(|t| t.pipeable)
+}
+
+/// Splits a command line on `'|'`, returning the trimmed main segment and a
+/// vector of trimmed pipe-stage segments (may be empty).
+fn split_pipe(line: &str) -> (String, Vec<String>) {
+    let mut parts = line.split('|');
+    let main = parts.next().unwrap().trim().to_owned();
+    let pipes: Vec<String> = parts.map(|s| s.trim().to_owned()).collect();
+    (main, pipes)
 }

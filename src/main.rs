@@ -7,6 +7,7 @@
 mod error;
 mod grpc;
 mod internal_commands;
+mod output;
 mod parser;
 mod session;
 mod terminal;
@@ -14,6 +15,7 @@ mod token;
 mod token_xml;
 mod token_yang;
 
+use std::io::Write;
 use std::sync::{Arc, Mutex, OnceLock};
 
 use clap::{App, Arg};
@@ -22,6 +24,7 @@ use yang4::context::{Context, ContextFlags};
 
 use crate::error::Error;
 use crate::grpc::GrpcClient;
+use crate::output::PagerWriter;
 use crate::session::{CommandMode, Session};
 use crate::terminal::CliPrompt;
 use crate::token::{Action, Commands};
@@ -62,11 +65,45 @@ impl Cli {
         let pcmd =
             parser::parse_command(&mut self.session, &self.commands, &line)
                 .map_err(Error::Parser)?;
-        let token = self.commands.get_token(pcmd.token_id);
+
+        let token_id = pcmd.token_id;
         let negate = pcmd.negate;
         let args = pcmd.args;
+        let pipe_stages = pcmd.pipe_stages;
+
+        // For pipeable commands, set up the writer chain before executing.
+        let is_pipeable = parser::is_pipeable(&self.commands, token_id);
+        if is_pipeable {
+            // Build base writer (pager or stdout).
+            let base: Box<dyn Write + Send> = if self.session.use_pager() {
+                PagerWriter::new()
+                    .map(|pw| Box::new(pw) as Box<dyn Write + Send>)
+                    .unwrap_or_else(|_| {
+                        Box::new(std::io::stdout()) as Box<dyn Write + Send>
+                    })
+            } else {
+                Box::new(std::io::stdout())
+            };
+
+            // Wrap with pipe-stage filters (last stage is innermost, wraps
+            // around the base writer first; first stage is outermost).
+            let writer =
+                pipe_stages.iter().rev().fold(base, |downstream, stage| {
+                    let stage_token = self.commands.get_token(stage.token_id);
+                    if let Some(Action::PipeCallback(factory)) =
+                        &stage_token.action
+                    {
+                        factory(downstream, stage.args.clone())
+                    } else {
+                        unreachable!()
+                    }
+                });
+
+            self.session.set_writer(writer);
+        }
 
         // Process command.
+        let token = self.commands.get_token(token_id);
         let mut exit = false;
         if let Some(action) = &token.action {
             match action {
@@ -81,7 +118,13 @@ impl Cli {
                     exit = (callback)(&self.commands, &mut self.session, args)
                         .map_err(Error::Callback)?;
                 }
+                Action::PipeCallback(_) => unreachable!(),
             }
+        }
+
+        // Reset writer, triggering Drop (flushes filters, waits for pager).
+        if is_pipeable {
+            self.session.set_writer(Box::new(std::io::stdout()));
         }
 
         Ok(exit)

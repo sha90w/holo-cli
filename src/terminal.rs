@@ -85,19 +85,39 @@ impl Completer for CliCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let cli = self.0.lock().unwrap();
 
-        let last_word = line.split_whitespace().last().unwrap_or(line);
-        let partial = line
+        // The portion of the line up to the cursor position.
+        let line_to_pos = &line[..pos];
+
+        // Determine whether the cursor is inside a pipe segment.
+        let pipe_idx = line_to_pos.rfind('|');
+        let (start_token_id, completion_line) = match pipe_idx {
+            Some(idx) => {
+                // Cursor is after a '|': complete pipe commands.
+                let segment = line_to_pos[idx + 1..].trim_start();
+                (cli.commands.pipe_root, segment)
+            }
+            None => {
+                // Normal command completion.
+                let wd_token_id = cli.session.mode().token(&cli.commands);
+                (wd_token_id, line_to_pos)
+            }
+        };
+
+        let last_word = completion_line
+            .split_whitespace()
+            .last()
+            .unwrap_or(completion_line);
+        let partial = completion_line
             .chars()
             .last()
             .map(|c| !c.is_whitespace())
             .unwrap_or(false);
 
-        let wd_token_id = cli.session.mode().token(&cli.commands);
         let completions = match parser::parse_command_try(
             &cli.session,
             &cli.commands,
-            wd_token_id,
-            line,
+            start_token_id,
+            completion_line,
         ) {
             Ok(ParsedCommand { token_id, .. })
             | Err(ParserError::Incomplete(token_id)) => {

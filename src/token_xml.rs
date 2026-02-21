@@ -55,6 +55,7 @@ fn parse_tag_tree(
         "exec" => commands.exec_root,
         "config" => commands.config_root_internal,
         "config-default" => commands.config_dflt_internal,
+        "pipe" => commands.pipe_root,
         _ => panic!("unknown tree name: {}", name),
     }
 }
@@ -69,74 +70,114 @@ fn parse_tag_token(
     let kind = find_opt_attribute(&attributes, "kind");
     let argument = find_opt_attribute(&attributes, "argument");
     let cmd_name = find_opt_attribute(&attributes, "cmd");
-    let callback = cmd_name.map(|name| match name {
-        "cmd_config" => internal_commands::cmd_config,
-        "cmd_list" => internal_commands::cmd_list,
-        "cmd_exit_exec" => internal_commands::cmd_exit_exec,
-        "cmd_exit_config" => internal_commands::cmd_exit_config,
-        "cmd_end" => internal_commands::cmd_end,
-        "cmd_pwd" => internal_commands::cmd_pwd,
-        "cmd_top" => internal_commands::cmd_top,
-        "cmd_discard" => internal_commands::cmd_discard,
-        "cmd_commit" => internal_commands::cmd_commit,
-        "cmd_validate" => internal_commands::cmd_validate,
-        "cmd_show_config" => internal_commands::cmd_show_config,
-        "cmd_show_config_changes" => internal_commands::cmd_show_config_changes,
-        "cmd_show_state" => internal_commands::cmd_show_state,
-        "cmd_show_yang_modules" => internal_commands::cmd_show_yang_modules,
-        "cmd_show_isis_interface" => internal_commands::cmd_show_isis_interface,
-        "cmd_show_isis_adjacency" => internal_commands::cmd_show_isis_adjacency,
-        "cmd_show_isis_database" => internal_commands::cmd_show_isis_database,
-        "cmd_show_isis_route" => internal_commands::cmd_show_isis_route,
-        "cmd_show_ospf_interface" => internal_commands::cmd_show_ospf_interface,
-        "cmd_show_ospf_interface_detail" => {
-            internal_commands::cmd_show_ospf_interface_detail
+    let pipeable = find_opt_attribute(&attributes, "pipeable") == Some("true");
+
+    let action = cmd_name.map(|name| match name {
+        "cmd_config" => Action::Callback(internal_commands::cmd_config),
+        "cmd_list" => Action::Callback(internal_commands::cmd_list),
+        "cmd_exit_exec" => Action::Callback(internal_commands::cmd_exit_exec),
+        "cmd_exit_config" => {
+            Action::Callback(internal_commands::cmd_exit_config)
         }
-        "cmd_show_ospf_vlink" => internal_commands::cmd_show_ospf_vlink,
-        "cmd_show_ospf_neighbor" => internal_commands::cmd_show_ospf_neighbor,
+        "cmd_end" => Action::Callback(internal_commands::cmd_end),
+        "cmd_pwd" => Action::Callback(internal_commands::cmd_pwd),
+        "cmd_top" => Action::Callback(internal_commands::cmd_top),
+        "cmd_discard" => Action::Callback(internal_commands::cmd_discard),
+        "cmd_commit" => Action::Callback(internal_commands::cmd_commit),
+        "cmd_validate" => Action::Callback(internal_commands::cmd_validate),
+        "cmd_show_config" => {
+            Action::Callback(internal_commands::cmd_show_config)
+        }
+        "cmd_show_config_changes" => {
+            Action::Callback(internal_commands::cmd_show_config_changes)
+        }
+        "cmd_show_state" => Action::Callback(internal_commands::cmd_show_state),
+        "cmd_show_yang_modules" => {
+            Action::Callback(internal_commands::cmd_show_yang_modules)
+        }
+        "cmd_show_isis_interface" => {
+            Action::Callback(internal_commands::cmd_show_isis_interface)
+        }
+        "cmd_show_isis_adjacency" => {
+            Action::Callback(internal_commands::cmd_show_isis_adjacency)
+        }
+        "cmd_show_isis_database" => {
+            Action::Callback(internal_commands::cmd_show_isis_database)
+        }
+        "cmd_show_isis_route" => {
+            Action::Callback(internal_commands::cmd_show_isis_route)
+        }
+        "cmd_show_ospf_interface" => {
+            Action::Callback(internal_commands::cmd_show_ospf_interface)
+        }
+        "cmd_show_ospf_interface_detail" => {
+            Action::Callback(internal_commands::cmd_show_ospf_interface_detail)
+        }
+        "cmd_show_ospf_vlink" => {
+            Action::Callback(internal_commands::cmd_show_ospf_vlink)
+        }
+        "cmd_show_ospf_neighbor" => {
+            Action::Callback(internal_commands::cmd_show_ospf_neighbor)
+        }
         "cmd_show_ospf_neighbor_detail" => {
-            internal_commands::cmd_show_ospf_neighbor_detail
+            Action::Callback(internal_commands::cmd_show_ospf_neighbor_detail)
         }
         "cmd_show_ospf_database_as" => {
-            internal_commands::cmd_show_ospf_database_as
+            Action::Callback(internal_commands::cmd_show_ospf_database_as)
         }
         "cmd_show_ospf_database_area" => {
-            internal_commands::cmd_show_ospf_database_area
+            Action::Callback(internal_commands::cmd_show_ospf_database_area)
         }
         "cmd_show_ospf_database_link" => {
-            internal_commands::cmd_show_ospf_database_link
+            Action::Callback(internal_commands::cmd_show_ospf_database_link)
         }
-        "cmd_show_ospf_route" => internal_commands::cmd_show_ospf_route,
-        "cmd_show_ospf_hostnames" => internal_commands::cmd_show_ospf_hostnames,
-        "cmd_show_rip_interface" => internal_commands::cmd_show_rip_interface,
+        "cmd_show_ospf_route" => {
+            Action::Callback(internal_commands::cmd_show_ospf_route)
+        }
+        "cmd_show_ospf_hostnames" => {
+            Action::Callback(internal_commands::cmd_show_ospf_hostnames)
+        }
+        "cmd_show_rip_interface" => {
+            Action::Callback(internal_commands::cmd_show_rip_interface)
+        }
         "cmd_show_rip_interface_detail" => {
-            internal_commands::cmd_show_rip_interface_detail
+            Action::Callback(internal_commands::cmd_show_rip_interface_detail)
         }
-        "cmd_show_rip_neighbor" => internal_commands::cmd_show_rip_neighbor,
+        "cmd_show_rip_neighbor" => {
+            Action::Callback(internal_commands::cmd_show_rip_neighbor)
+        }
         "cmd_show_rip_neighbor_detail" => {
-            internal_commands::cmd_show_rip_neighbor_detail
+            Action::Callback(internal_commands::cmd_show_rip_neighbor_detail)
         }
-        "cmd_show_rip_route" => internal_commands::cmd_show_rip_route,
+        "cmd_show_rip_route" => {
+            Action::Callback(internal_commands::cmd_show_rip_route)
+        }
         "cmd_show_mpls_ldp_discovery" => {
-            internal_commands::cmd_show_mpls_ldp_discovery
+            Action::Callback(internal_commands::cmd_show_mpls_ldp_discovery)
         }
-        "cmd_show_mpls_ldp_discovery_detail" => {
-            internal_commands::cmd_show_mpls_ldp_discovery_detail
+        "cmd_show_mpls_ldp_discovery_detail" => Action::Callback(
+            internal_commands::cmd_show_mpls_ldp_discovery_detail,
+        ),
+        "cmd_show_mpls_ldp_peer" => {
+            Action::Callback(internal_commands::cmd_show_mpls_ldp_peer)
         }
-        "cmd_show_mpls_ldp_peer" => internal_commands::cmd_show_mpls_ldp_peer,
         "cmd_show_mpls_ldp_peer_detail" => {
-            internal_commands::cmd_show_mpls_ldp_peer_detail
+            Action::Callback(internal_commands::cmd_show_mpls_ldp_peer_detail)
         }
-        "cmd_show_mpls_ldp_binding_address" => {
-            internal_commands::cmd_show_mpls_ldp_binding_address
-        }
+        "cmd_show_mpls_ldp_binding_address" => Action::Callback(
+            internal_commands::cmd_show_mpls_ldp_binding_address,
+        ),
         "cmd_show_mpls_ldp_binding_fec" => {
-            internal_commands::cmd_show_mpls_ldp_binding_fec
+            Action::Callback(internal_commands::cmd_show_mpls_ldp_binding_fec)
         }
         "cmd_clear_isis_adjacency" => {
-            internal_commands::cmd_clear_isis_adjacency
+            Action::Callback(internal_commands::cmd_clear_isis_adjacency)
         }
-        "cmd_clear_isis_database" => internal_commands::cmd_clear_isis_database,
+        "cmd_clear_isis_database" => {
+            Action::Callback(internal_commands::cmd_clear_isis_database)
+        }
+        "pipe_include" => Action::PipeCallback(internal_commands::pipe_include),
+        "pipe_exclude" => Action::PipeCallback(internal_commands::pipe_exclude),
         _ => panic!("unknown command name: {}", name),
     });
 
@@ -146,10 +187,9 @@ fn parse_tag_token(
         None => TokenKind::Word,
     };
 
-    let action = callback.map(|callback| Action::Callback(callback));
-
     // Add new token.
-    let token = Token::new(name, help, kind, argument, action, false);
+    let mut token = Token::new(name, help, kind, argument, action, false);
+    token.pipeable = pipeable;
 
     // Link new token.
     commands.add_token(parent, token)
