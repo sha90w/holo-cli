@@ -205,12 +205,4 @@
     </token>
   </tree>
 
-  <tree name="pipe">
-    <token name="include" help="Keep lines matching pattern">
-      <token name="pattern" argument="pattern" kind="string" help="Pattern to match" cmd="pipe_include"/>
-    </token>
-    <token name="exclude" help="Remove lines matching pattern">
-      <token name="pattern" argument="pattern" kind="string" help="Pattern to exclude" cmd="pipe_exclude"/>
-    </token>
-  </tree>
 </cli>

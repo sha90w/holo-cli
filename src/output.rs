@@ -6,6 +6,7 @@
 
 use std::io::{self, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
+use std::thread::{self, JoinHandle};
 
 // ===== PagerWriter =====
 
@@ -52,6 +53,77 @@ impl Drop for PagerWriter {
         // Close stdin first so `less` receives EOF and can exit.
         drop(self.stdin.take());
         // Wait for the pager process to finish.
+        let _ = self.child.wait();
+    }
+}
+
+// ===== GrepWriter =====
+
+/// A `Write` wrapper that pipes output through the system `grep` binary.
+///
+/// The show command writes to this wrapper, which forwards the bytes to grep's
+/// stdin.  A background thread concurrently reads grep's stdout and copies it
+/// to the downstream writer.  On drop, stdin is closed (EOF → grep finishes),
+/// the thread is joined, and the child process is waited on.
+pub struct GrepWriter {
+    stdin: Option<ChildStdin>,
+    output_thread: Option<JoinHandle<()>>,
+    child: Child,
+}
+
+impl GrepWriter {
+    pub fn new(
+        downstream: Box<dyn Write + Send>,
+        args: Vec<String>,
+    ) -> io::Result<Self> {
+        let mut child = Command::new("grep")
+            .args(&args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()?;
+
+        let stdin = child.stdin.take();
+        let mut stdout = child.stdout.take().unwrap();
+
+        let output_thread = thread::spawn(move || {
+            let mut downstream = downstream;
+            let _ = io::copy(&mut stdout, &mut downstream);
+            let _ = downstream.flush();
+        });
+
+        Ok(GrepWriter {
+            stdin: Some(stdin.unwrap()),
+            output_thread: Some(output_thread),
+            child,
+        })
+    }
+}
+
+impl Write for GrepWriter {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        match &mut self.stdin {
+            Some(stdin) => stdin.write(buf),
+            None => Ok(buf.len()),
+        }
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        match &mut self.stdin {
+            Some(stdin) => stdin.flush(),
+            None => Ok(()),
+        }
+    }
+}
+
+impl Drop for GrepWriter {
+    fn drop(&mut self) {
+        // Signal EOF to grep by closing its stdin.
+        drop(self.stdin.take());
+        // Wait for the output thread to drain grep's stdout.
+        if let Some(thread) = self.output_thread.take() {
+            let _ = thread.join();
+        }
+        // Wait for the grep process to exit.
         let _ = self.child.wait();
     }
 }

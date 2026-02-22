@@ -36,6 +36,10 @@ pub struct Token {
 pub enum TokenKind {
     Word,
     String,
+    /// Matches the first word and captures it together with all remaining
+    /// words as a single space-joined string.  Always the last token in a
+    /// chain (the parser stops consuming input after it).
+    Remaining,
 }
 
 pub enum Action {
@@ -80,6 +84,7 @@ impl Commands {
     pub fn gen_cmds(&mut self) {
         token_yang::gen_cmds(self);
         token_xml::gen_cmds(self);
+        token_xml::gen_pipe_cmds(self);
     }
 
     pub fn add_token(&mut self, parent: NodeId, token: Token) -> NodeId {
@@ -120,7 +125,7 @@ impl Token {
     }
 
     pub fn matches(&self, word: &str, exact: bool) -> bool {
-        if self.kind == TokenKind::String {
+        if self.kind == TokenKind::String || self.kind == TokenKind::Remaining {
             // TODO: custom match per token type.
             true
         } else if exact {

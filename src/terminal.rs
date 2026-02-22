@@ -223,7 +223,9 @@ fn complete_add_token(
     let token = commands.get_token(token_id);
     if token.kind == TokenKind::Word && !token.matches(word, true) {
         completions.push((token.name.clone(), token.help.clone()));
-    } else if token.kind == TokenKind::String && !partial {
+    } else if matches!(token.kind, TokenKind::String | TokenKind::Remaining)
+        && !partial
+    {
         completions.push((token.name.to_uppercase(), token.help.clone()));
     } else if token.kind == TokenKind::Word && token.matches(word, false) {
         completions.push((token.name.to_lowercase(), token.help.clone()));
@@ -243,7 +245,11 @@ fn complete_add_tokens(
             let token = commands.get_token(token_id);
             if token.kind == TokenKind::Word {
                 Some((token.name.clone(), token.help.clone()))
-            } else if token.kind == TokenKind::String && !partial {
+            } else if matches!(
+                token.kind,
+                TokenKind::String | TokenKind::Remaining
+            ) && !partial
+            {
                 Some((token.name.to_uppercase(), token.help.clone()))
             } else {
                 None

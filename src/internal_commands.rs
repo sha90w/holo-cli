@@ -19,7 +19,7 @@ use yang4::schema::SchemaNodeKind;
 
 use crate::YANG_CTX;
 use crate::grpc::proto;
-use crate::output::FilterWriter;
+use crate::output::{FilterWriter, GrepWriter};
 use crate::parser::ParsedArgs;
 use crate::session::{CommandMode, ConfigurationType, Session};
 use crate::token::{Commands, TokenKind};
@@ -2049,4 +2049,20 @@ pub fn pipe_exclude(
 ) -> Box<dyn Write + Send> {
     let pattern = get_arg(&mut args, "pattern");
     Box::new(FilterWriter::new(downstream, pattern, false))
+}
+
+pub fn pipe_grep(
+    downstream: Box<dyn Write + Send>,
+    mut args: ParsedArgs,
+) -> Box<dyn Write + Send> {
+    let args_str = get_arg(&mut args, "args");
+    let grep_args: Vec<String> =
+        args_str.split_whitespace().map(String::from).collect();
+    match GrepWriter::new(downstream, grep_args) {
+        Ok(writer) => Box::new(writer),
+        Err(e) => {
+            eprintln!("grep: {e}");
+            Box::new(std::io::sink())
+        }
+    }
 }

@@ -108,8 +108,11 @@ pub fn parse_command_try(
     let mut args = ParsedArgs::new();
     let mut negate = false;
 
-    for (index, word) in line.split_whitespace().enumerate() {
-        let first_word = index == 0;
+    let words: Vec<&str> = line.split_whitespace().collect();
+    let mut i = 0;
+    while i < words.len() {
+        let word = words[i];
+        let first_word = i == 0;
         let tokens = get_tokens(
             commands,
             curr_token_id,
@@ -147,13 +150,22 @@ pub fn parse_command_try(
                 let value = match matching_token.kind {
                     TokenKind::Word => matching_token.name.clone(),
                     TokenKind::String => word.to_owned(),
+                    // Capture this word and all remaining words as one value.
+                    TokenKind::Remaining => words[i..].join(" "),
                 };
                 args.push_back((argument_name.clone(), value));
             }
 
             // Update current token ID and proceed to the next word.
             curr_token_id = matching_token_id;
+
+            // Remaining tokens consume all words — stop processing.
+            if matching_token.kind == TokenKind::Remaining {
+                break;
+            }
         }
+
+        i += 1;
     }
 
     // Check if the matched token represents a command.
