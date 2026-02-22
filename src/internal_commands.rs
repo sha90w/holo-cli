@@ -2191,7 +2191,7 @@ pub fn cmd_show_bgp_neighbor(
         writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -2430,7 +2430,7 @@ pub fn cmd_show_bgp_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
+    if let Err(error) = write!(session.writer(), "{}", output) {
         println!("% failed to print data: {}", error)
     }
 
@@ -2618,8 +2618,9 @@ pub fn cmd_show_route(
     }
 
     if !output.is_empty() {
-        page_output(session, &output)
-            .map_err(|e| format!("% failed to display data: {}", e))?;
+        if let Err(error) = write!(session.writer(), "{}", output) {
+            println!("% failed to print data: {}", error)
+        }
     }
 
     Ok(false)
