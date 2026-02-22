@@ -92,6 +92,26 @@ impl Completer for CliCompleter {
         let pipe_idx = line_to_pos.rfind('|');
         let (start_token_id, completion_line) = match pipe_idx {
             Some(idx) => {
+                // Check whether the main command (before '|') is pipeable.
+                // If not, no pipe completions are offered.
+                let wd_token_id =
+                    cli.session.mode().token(&cli.commands);
+                let main_segment = line_to_pos[..idx].trim();
+                let main_pipeable = match parser::parse_command_try(
+                    &cli.session,
+                    &cli.commands,
+                    wd_token_id,
+                    main_segment,
+                ) {
+                    Ok(ParsedCommand { token_id, .. })
+                    | Err(ParserError::Incomplete(token_id)) => {
+                        parser::is_pipeable(&cli.commands, token_id)
+                    }
+                    _ => false,
+                };
+                if !main_pipeable {
+                    return vec![];
+                }
                 // Cursor is after a '|': complete pipe commands.
                 let segment = line_to_pos[idx + 1..].trim_start();
                 (cli.commands.pipe_root, segment)
