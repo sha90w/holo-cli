@@ -91,12 +91,16 @@ impl Completer for CliCompleter {
         // Determine whether the cursor is inside a pipe segment.
         let pipe_idx = line_to_pos.rfind('|');
         let (start_token_id, completion_line) = match pipe_idx {
-            Some(idx) => {
-                // Check whether the main command (before '|') is pipeable.
-                // If not, no pipe completions are offered.
+            Some(last_idx) => {
+                // Check whether the main command (before the *first* '|') is
+                // pipeable.  Use find() here, not rfind(), so that a second
+                // pipe like `show state | grep bgp |` still resolves the
+                // original `show state` as the command being tested.
                 let wd_token_id =
                     cli.session.mode().token(&cli.commands);
-                let main_segment = line_to_pos[..idx].trim();
+                let first_pipe_idx =
+                    line_to_pos.find('|').unwrap_or(last_idx);
+                let main_segment = line_to_pos[..first_pipe_idx].trim();
                 let main_pipeable = match parser::parse_command_try(
                     &cli.session,
                     &cli.commands,
@@ -113,7 +117,7 @@ impl Completer for CliCompleter {
                     return vec![];
                 }
                 // Cursor is after a '|': complete pipe commands.
-                let segment = line_to_pos[idx + 1..].trim_start();
+                let segment = line_to_pos[last_idx + 1..].trim_start();
                 (cli.commands.pipe_root, segment)
             }
             None => {
