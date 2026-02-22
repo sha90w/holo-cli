@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
+use chrono::prelude::*;
 use indextree::NodeId;
 use prettytable::{Table, format, row};
 use similar::TextDiff;
@@ -26,6 +27,7 @@ use crate::token::{Commands, TokenKind};
 
 const XPATH_PROTOCOL: &str =
     "/ietf-routing:routing/control-plane-protocols/control-plane-protocol";
+const XPATH_RIB: &str = "/ietf-routing:routing/ribs/rib";
 
 struct YangTableBuilder<'a> {
     session: &'a mut Session,
@@ -1987,8 +1989,455 @@ pub fn cmd_show_mpls_ldp_binding_fec(
     Ok(false)
 }
 
-// ===== IS-IS "clear" commands =====
+// ===== BGP "show" commands =====
+const PROTOCOL_BGP: &str = "ietf-bgp:bgp";
+const XPATH_BGP_NEIGHBOR: &str = "ietf-bgp:bgp/neighbors/neighbor";
+const XPATH_BGP_NEIGHBOR_STATS: &str = "statistics";
+const XPATH_BGP_NEIGHBOR_STATS_MSGS: &str = "messages";
+const XPATH_BGP_RIB_AFI_SAFI: &str = "ietf-bgp:bgp/rib/afi-safis/afi-safi";
+const XPATH_BGP_RIB_ATTR_SET: &str = "ietf-bgp:bgp/rib/attr-sets";
 
+fn uptime_from_secs(secs: i64) -> String {
+    let days = secs / 86400;
+    let day_secs = secs % 86400;
+    let hours = day_secs / 3600;
+    let minutes = day_secs % 3600 / 60;
+    let seconds = day_secs % 60;
+
+    format!(
+        "{}{:02}:{:02}:{:02}",
+        if days > 0 {
+            format!("{}d ", days)
+        } else {
+            "".to_string()
+        },
+        hours,
+        minutes,
+        seconds
+    )
+}
+
+pub fn cmd_show_bgp_summary(
+    _commands: &Commands,
+    session: &mut Session,
+    mut args: ParsedArgs,
+) -> Result<bool, String> {
+    let afi = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
+
+    let afi = match afi.as_str() {
+        "ipv4" => "iana-bgp-types:ipv4-unicast",
+        "ipv6" => "iana-bgp-types:ipv6-unicast",
+        _ => return Err(format!("Unsupported address family: {}", afi)),
+    };
+
+    let afi_xpath = format!("afi-safis/afi-safi[name='{}']/prefixes", afi);
+
+    YangTableBuilder::new(session, proto::get_request::DataType::All)
+        .xpath(XPATH_PROTOCOL)
+        .filter_list_key("type", Some(PROTOCOL_BGP))
+        .column_leaf("Instance", "name")
+        .xpath(XPATH_BGP_NEIGHBOR)
+        .column_leaf("Description", "description")
+        .column_leaf("Neighbor", "remote-address")
+        .column_leaf("AS", "peer-as")
+        .column_leaf("State", "session-state")
+        .column_from_fn(
+            "Up/Down",
+            Box::new(|dnode| {
+                let Some(last_established) =
+                    dnode.child_opt_value("last-established")
+                else {
+                    return "-".to_owned();
+                };
+                let last_established =
+                    DateTime::parse_from_rfc3339(last_established.as_str())
+                        .unwrap_or_default();
+                let now = Utc::now();
+                let delta =
+                    now.signed_duration_since(last_established).num_seconds();
+                uptime_from_secs(delta).to_string()
+            }),
+        )
+        .column_from_fn(
+            "Pfx\nRcd/Acc",
+            Box::new(move |dnode| {
+                let Some(pfxs) = dnode.find_path(&afi_xpath).ok() else {
+                    return "- / -".to_owned();
+                };
+                let rcvd = pfxs.child_value("received");
+                let acptd = pfxs.child_value("installed");
+                format!("{} / {}", rcvd, acptd)
+            }),
+        )
+        .xpath(XPATH_BGP_NEIGHBOR_STATS)
+        .column_leaf("Trans.", "established-transitions")
+        .xpath(XPATH_BGP_NEIGHBOR_STATS_MSGS)
+        .column_leaf("MsgRcvd", "total-received")
+        .column_leaf("MsgSent", "total-sent")
+        .show()?;
+
+    Ok(false)
+}
+
+fn bgp_get_attrs(
+    session: &mut Session,
+) -> Result<BTreeMap<String, String>, String> {
+    let xpath = format!(
+        "{}[type='{}'][name='{}']/{}",
+        XPATH_PROTOCOL, PROTOCOL_BGP, "main", XPATH_BGP_RIB_ATTR_SET
+    );
+
+    let data =
+        fetch_data(session, proto::get_request::DataType::State, &xpath)?;
+
+    let attributes = data
+        .find_path(&xpath)
+        .unwrap()
+        .find_xpath("attr-set")
+        .unwrap()
+        .map(|dnode| {
+            let index = dnode.child_value("index");
+            let attrs = dnode.find_path("attributes").unwrap();
+
+            let nexthop =
+                attrs.child_opt_value("next-hop").unwrap_or("-".to_owned());
+            let med = attrs.child_opt_value("med").unwrap_or("-".to_owned());
+            let origin = match attrs.child_opt_value("origin").as_deref() {
+                Some("incomplete") => "?",
+                Some("igp") => "I",
+                Some("egp") => "E",
+                Some(origin) => origin,
+                None => "",
+            }
+            .to_owned();
+
+            let lclpref = attrs
+                .child_opt_value("local-pref")
+                .unwrap_or("-".to_owned());
+
+            let as_path = attrs
+                .find_xpath("as-path/segment/member")
+                .unwrap()
+                .filter_map(|member| member.value_canonical())
+                .collect::<Vec<String>>()
+                .join(" ");
+
+            (
+                index,
+                format!(
+                    "{:>20} {:>5} {:>9} {} {}",
+                    nexthop, med, lclpref, as_path, origin
+                ),
+            )
+        })
+        .collect();
+
+    Ok(attributes)
+}
+
+pub fn cmd_show_bgp_neighbor(
+    _commands: &Commands,
+    session: &mut Session,
+    mut args: ParsedArgs,
+) -> Result<bool, String> {
+    let attrs = bgp_get_attrs(session).unwrap();
+
+    let mut output = String::new();
+
+    let neighbor = get_arg(&mut args, "neighbor");
+    let rt_type = get_arg(&mut args, "type");
+    let afi = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
+
+    let afi = match afi.as_str() {
+        "ipv4" => "ipv4-unicast",
+        "ipv6" => "ipv6-unicast",
+        _ => return Err(format!("Unsupported address family: {}", afi)),
+    };
+
+    let rt_type = match rt_type.as_str() {
+        "received-routes" => "adj-rib-in-pre/routes",
+        "advertised-routes" => "adj-rib-out-post/routes",
+        _ => unreachable!(),
+    };
+
+    let xpath_req = format!(
+        "{}[type='{}'][name='{}']/{}[name='iana-bgp-types:{}']/{}/neighbors/neighbor[neighbor-address='{}']/{}",
+        XPATH_PROTOCOL,
+        PROTOCOL_BGP,
+        "main",
+        XPATH_BGP_RIB_AFI_SAFI,
+        afi,
+        afi,
+        neighbor,
+        rt_type
+    );
+
+    let data =
+        fetch_data(session, proto::get_request::DataType::State, &xpath_req)?;
+
+    let xpath_routes = format!("{}/route", &xpath_req);
+
+    writeln!(output, "\nAddress family: {afi}").unwrap();
+    writeln!(
+        output,
+        "{:>20} {:>20} {:>5} {:>5} AS Path",
+        "Prefix", "NextHop", "MED", "LocalPref"
+    )
+    .unwrap();
+    for route in data.find_xpath(&xpath_routes).unwrap() {
+        let prefix = route.child_opt_value("prefix").unwrap();
+        let index = route.child_opt_value("attr-index").unwrap();
+        let route_attrs = attrs.get(&index).unwrap();
+        writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
+    }
+
+    if let Err(error) = page_output(session, &output) {
+        println!("% failed to print data: {}", error)
+    }
+
+    Ok(false)
+}
+
+fn strip_prefix(input: &str) -> &str {
+    match input.split_once(':') {
+        Some((_first, remainder)) => remainder,
+        None => input,
+    }
+}
+
+pub fn cmd_show_bgp_neighbor_detail(
+    _commands: &Commands,
+    session: &mut Session,
+    mut args: ParsedArgs,
+) -> Result<bool, String> {
+    let mut output = String::new();
+    let neighbor_addr = get_opt_arg(&mut args, "neighbor");
+
+    let xpath_bgp_instance = format!(
+        "{}[type='{}'][name='{}']",
+        XPATH_PROTOCOL, PROTOCOL_BGP, "main"
+    );
+
+    let mut xpath_neighbor = "ietf-bgp:bgp/neighbors/neighbor".to_owned();
+    if let Some(addr) = &neighbor_addr {
+        xpath_neighbor =
+            format!("{}[remote-address='{}']", xpath_neighbor, addr);
+    }
+
+    let data = fetch_data(
+        session,
+        proto::get_request::DataType::All,
+        &xpath_bgp_instance,
+    )?;
+
+    for dnode_inst in data.find_xpath(&xpath_bgp_instance).unwrap() {
+        let local_as = dnode_inst.relative_value("ietf-bgp:bgp/global/as");
+        let local_rid =
+            dnode_inst.relative_value("ietf-bgp:bgp/global/identifier");
+
+        for dnode_nbr in dnode_inst.find_xpath(&xpath_neighbor).unwrap() {
+            let remote_addr = dnode_nbr.child_value("remote-address");
+            let remote_as = dnode_nbr.child_value("peer-as");
+            let peer_type = dnode_nbr.child_value("peer-type");
+            let desc = dnode_nbr
+                .child_opt_value("description")
+                .unwrap_or("-".to_owned());
+
+            writeln!(
+                output,
+                "BGP neighbor is {}, remote AS {}, {} link",
+                remote_addr, remote_as, peer_type
+            )
+            .unwrap();
+
+            writeln!(output, " Description: {}", desc).unwrap();
+
+            let remote_rid = dnode_nbr.child_value("identifier");
+            writeln!(
+                output,
+                "  BGP version 4, remote router ID {}",
+                remote_rid
+            )
+            .unwrap();
+
+            // Timers
+            if let Some(hold_time_str) =
+                dnode_nbr.relative_opt_value("timers/negotiated-hold-time")
+            {
+                let hold_time: u32 = hold_time_str.parse().unwrap_or(0);
+                let keepalive = hold_time / 3;
+                writeln!(
+                    output,
+                    "  Hold time is {}, keepalive interval is {} seconds",
+                    hold_time, keepalive
+                )
+                .unwrap();
+            }
+
+            let state = dnode_nbr.child_value("session-state");
+
+            let last_established_leaf =
+                dnode_nbr.child_value("last-established");
+            let last_established =
+                DateTime::parse_from_rfc3339(last_established_leaf.as_str())
+                    .unwrap();
+            let delta = Utc::now()
+                .signed_duration_since(last_established)
+                .num_seconds();
+            let uptime_str = uptime_from_secs(delta);
+
+            writeln!(output, "  BGP state is {}, up for {}", state, uptime_str)
+                .unwrap();
+
+            let transitions =
+                dnode_nbr.relative_value("statistics/established-transitions");
+            writeln!(
+                output,
+                "  Number of transitions to established: {}",
+                transitions
+            )
+            .unwrap();
+
+            // Capabilities
+            writeln!(output, "  Neighbor Capabilities:").unwrap();
+            let caps_xpath = "capabilities/negotiated-capabilities";
+            if let Ok(iter) = dnode_nbr.find_xpath(caps_xpath) {
+                let caps: Vec<String> = iter
+                    .map(|n| {
+                        let val = n.value_canonical().unwrap_or_default();
+                        strip_prefix(&val).to_owned()
+                    })
+                    .collect();
+
+                if !caps.is_empty() {
+                    writeln!(output, "    Options: <{}>", caps.join(" "))
+                        .unwrap();
+                }
+            }
+
+            // Address Families
+            let afi_xpath = "afi-safis/afi-safi";
+            let mut afi_names = Vec::new();
+            if let Ok(afi_iter) = dnode_nbr.find_xpath(afi_xpath) {
+                for afi_node in afi_iter {
+                    let name = afi_node.child_value("name");
+                    afi_names.push(strip_prefix(&name).to_owned());
+                }
+            }
+            if !afi_names.is_empty() {
+                writeln!(
+                    output,
+                    "\n  Address families configured: {}",
+                    afi_names.join(" ")
+                )
+                .unwrap();
+            }
+
+            // Message Statistics
+            let stats_path = "statistics/messages";
+            if let Some(stats_node) = dnode_nbr
+                .find_xpath(stats_path)
+                .ok()
+                .and_then(|mut x| x.next())
+            {
+                writeln!(output, "\n  Message Statistics:").unwrap();
+                writeln!(output, "    {:25} {:>10} {:>10}", "", "Sent", "Rcvd")
+                    .unwrap();
+
+                let sent_updates = stats_node.child_value("updates-sent");
+                let rcvd_updates = stats_node.child_value("updates-received");
+                let sent_notif = stats_node.child_value("notifications-sent");
+                let rcvd_notif =
+                    stats_node.child_value("notifications-received");
+                let sent_total = stats_node.child_value("total-sent");
+                let rcvd_total = stats_node.child_value("total-received");
+
+                writeln!(
+                    output,
+                    "    {:25} {:>10} {:>10}",
+                    "Updates:", sent_updates, rcvd_updates
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "    {:25} {:>10} {:>10}",
+                    "Notifications:", sent_notif, rcvd_notif
+                )
+                .unwrap();
+                writeln!(
+                    output,
+                    "    {:25} {:>10} {:>10}",
+                    "Total messages:", sent_total, rcvd_total
+                )
+                .unwrap();
+            }
+
+            // Prefix Statistics
+            writeln!(output, "\n  Prefix Statistics:").unwrap();
+            writeln!(
+                output,
+                "    {:20} {:>10} {:>10} {:>10}",
+                "", "Sent", "Rcvd", "Installed"
+            )
+            .unwrap();
+
+            if let Ok(afi_iter) = dnode_nbr.find_xpath(afi_xpath) {
+                for afi_node in afi_iter {
+                    let name = afi_node.child_value("name");
+                    let name = strip_prefix(&name).to_owned();
+
+                    let sent = afi_node.relative_value("prefixes/sent");
+                    let rcvd = afi_node.relative_value("prefixes/received");
+                    let installed =
+                        afi_node.relative_value("prefixes/installed");
+
+                    writeln!(
+                        output,
+                        "    {:20} {:>10} {:>10} {:>10}",
+                        name, sent, rcvd, installed
+                    )
+                    .unwrap();
+                }
+            }
+
+            // Local/Remote Addresses and Ports
+            writeln!(output).unwrap();
+            writeln!(
+                output,
+                " Local AS is {}, local router ID {}",
+                local_as, local_rid
+            )
+            .unwrap();
+
+            let local_addr = dnode_nbr.child_value("local-address");
+            let local_port = dnode_nbr.child_value("local-port");
+            let remote_port = dnode_nbr.child_value("remote-port");
+
+            writeln!(
+                output,
+                " Local TCP address is {}, local port is {}",
+                local_addr, local_port
+            )
+            .unwrap();
+            writeln!(
+                output,
+                " Remote TCP address is {}, remote port is {}",
+                remote_addr, remote_port
+            )
+            .unwrap();
+
+            writeln!(output).unwrap();
+        }
+    }
+
+    if let Err(error) = page_output(session, &output) {
+        println!("% failed to print data: {}", error)
+    }
+
+    Ok(false)
+}
+
+// ===== IS-IS "clear" commands =====
 pub fn cmd_clear_isis_adjacency(
     _commands: &Commands,
     session: &mut Session,
@@ -2029,6 +2478,149 @@ pub fn cmd_clear_isis_database(
     let _ = session
         .execute(data)
         .map_err(|error| format!("% failed to invoke RPC: {}", error))?;
+
+    Ok(false)
+}
+
+// ===== BGP "clear" commands =====
+const XPATH_BGP_NEIGHBORS_CLEAR: &str = "ietf-bgp:bgp/neighbors/ietf-bgp:clear";
+
+pub fn cmd_clear_bgp_neighbor(
+    _commands: &Commands,
+    session: &mut Session,
+    mut args: ParsedArgs,
+) -> Result<bool, String> {
+    let neighbor = get_opt_arg(&mut args, "neighbor");
+    let clear_type = get_opt_arg(&mut args, "type");
+    let yang_ctx = YANG_CTX.get().unwrap();
+
+    let xpath = format!(
+        "{}[type='{}'][name='{}']/{}",
+        XPATH_PROTOCOL, PROTOCOL_BGP, "main", XPATH_BGP_NEIGHBORS_CLEAR
+    );
+
+    let mut clear_req = DataTree::new(yang_ctx);
+    clear_req.new_path(&xpath, None, false).unwrap();
+
+    if let Some(clear_type) = clear_type {
+        let operation = match clear_type.as_str() {
+            "soft-in" => "soft-inbound",
+            op => op,
+        };
+        let xpath = format!("{}/{}", &xpath, operation);
+        clear_req.new_path(&xpath, None, false).unwrap();
+    }
+
+    if neighbor.is_some() {
+        let xpath = format!("{}/holo-bgp:remote-addr", &xpath);
+        clear_req
+            .new_path(&xpath, neighbor.as_deref(), false)
+            .unwrap();
+    }
+
+    let data = clear_req
+        .print_string(DataFormat::JSON, DataPrinterFlags::WD_ALL)
+        .unwrap();
+
+    println!("{}", data);
+
+    let data = DataTree::parse_op_string(
+        yang_ctx,
+        data,
+        DataFormat::JSON,
+        DataParserFlags::empty(),
+        DataOperation::RpcYang,
+    )
+    .expect("Failed to parse data tree");
+
+    let _ = session
+        .execute(data)
+        .map_err(|error| format!("% failed to invoke RPC: {}", error))?;
+
+    Ok(false)
+}
+
+// ===== "show route" commands =====
+
+fn protocol_display_name(proto: &str) -> &str {
+    match proto {
+        "ietf-bgp:bgp" => "BGP",
+        "ietf-ospf:ospfv2" => "OSPF",
+        "ietf-ospf:ospfv3" => "OSPFv3",
+        "ietf-isis:isis" => "IS-IS",
+        "ietf-rip:ripv2" => "RIP",
+        "ietf-rip:ripng" => "RIPng",
+        "ietf-routing:direct" => "Direct",
+        "ietf-routing:static" => "Static",
+        _ => proto,
+    }
+}
+
+pub fn cmd_show_route(
+    _commands: &Commands,
+    session: &mut Session,
+    mut args: ParsedArgs,
+) -> Result<bool, String> {
+    let rib_name = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
+    let fetch_xpath = format!("{}[name='{}']", XPATH_RIB, rib_name);
+    let route_xpath = format!("{}/routes/route", fetch_xpath);
+
+    let data =
+        fetch_data(session, proto::get_request::DataType::All, &fetch_xpath)?;
+
+    let Some(dnode) = data.reference() else {
+        return Ok(false);
+    };
+
+    let mut output = String::new();
+
+    for route in dnode.find_xpath(&route_xpath).unwrap() {
+        let prefix = route.child_value("destination-prefix");
+        let protocol = route.child_value("source-protocol");
+        let preference = route.child_value("route-preference");
+        let active = route.find_xpath("active").unwrap().next().is_some();
+        let last_updated = route.child_opt_value("last-updated");
+
+        let protocol_name = protocol_display_name(&protocol);
+
+        let uptime = last_updated
+            .and_then(|ts| DateTime::parse_from_rfc3339(&ts).ok())
+            .map(|ts| {
+                let delta = Utc::now().signed_duration_since(ts).num_seconds();
+                uptime_from_secs(delta)
+            })
+            .unwrap_or("-".to_owned());
+
+        let active_marker = if active { "*" } else { " " };
+
+        writeln!(
+            output,
+            "{:<20} {}[{}/{}] {}",
+            prefix, active_marker, protocol_name, preference, uptime
+        )
+        .unwrap();
+
+        let nh_addr = route.relative_opt_value("next-hop/next-hop-address");
+        let nh_iface = route.relative_opt_value("next-hop/outgoing-interface");
+        match (nh_addr, nh_iface) {
+            (Some(addr), Some(iface)) => {
+                writeln!(output, "{:>20} >  to {} via {}", "", addr, iface)
+                    .unwrap();
+            }
+            (Some(addr), None) => {
+                writeln!(output, "{:>20} >  to {}", "", addr).unwrap();
+            }
+            (None, Some(iface)) => {
+                writeln!(output, "{:>20} >  via {}", "", iface).unwrap();
+            }
+            (None, None) => {}
+        }
+    }
+
+    if !output.is_empty() {
+        page_output(session, &output)
+            .map_err(|e| format!("% failed to display data: {}", e))?;
+    }
 
     Ok(false)
 }

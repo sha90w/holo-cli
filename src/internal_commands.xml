@@ -38,9 +38,31 @@
         <token name="interface" help="Interface information" cmd="cmd_show_isis_interface">
           <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_isis_interface"/>
         </token>
-	<token name="database" help="Link state database" cmd="cmd_show_isis_database"/>
-	<token name="route" help="Routing table" cmd="cmd_show_isis_route"/>
-	<token name="adjacency" help="Adjacency information" cmd="cmd_show_isis_adjacency"/>
+        <token name="database" help="Link state database" cmd="cmd_show_isis_database"/>
+        <token name="route" help="Routing table" cmd="cmd_show_isis_route"/>
+        <token name="adjacency" help="Adjacency information" cmd="cmd_show_isis_adjacency"/>
+      </token>
+      <!-- BGP show commands -->
+      <token name="bgp" argument="protocol" help="BGP information">
+        <token name="ipv4" argument="afi" help="Display IPv4 information">
+           <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+        </token>
+        <token name="ipv6" argument="afi" help="Display IPv6 information">
+           <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+        </token>
+        <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+        <token name="neighbor" help="BGP neighbor information">
+            <token name="NEIGHBOR" help="BGP neighbor" argument="neighbor" kind="string" cmd="cmd_show_bgp_neighbor_detail">
+                <token name="received-routes" argument="type" help="Received routing information" cmd="cmd_show_bgp_neighbor">
+                   <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_bgp_neighbor"/>
+                   <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_bgp_neighbor"/>
+                </token>
+                <token name="advertised-routes" argument="type" help="Advertised routing information" cmd="cmd_show_bgp_neighbor">
+                   <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_bgp_neighbor"/>
+                   <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_bgp_neighbor"/>
+                </token>
+            </token>
+        </token>
       </token>
       <!-- OSPF show commands -->
       <token name="ospfv2" argument="protocol" help="OSPFv2 information">
@@ -151,6 +173,11 @@
           </token>
         </token>
       </token>
+      <!-- Route show commands -->
+      <token name="route" help="Routing table information" cmd="cmd_show_route">
+        <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_route"/>
+        <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_route"/>
+      </token>
     </token>
     <token name="clear" help="Reset functions">
       <!-- IS-IS clear commands -->
@@ -158,6 +185,20 @@
 	<token name="adjacency" help="IS-IS adjacencies" cmd="cmd_clear_isis_adjacency"/>
 	<token name="database" help="IS-IS database" cmd="cmd_clear_isis_database"/>
       </token>
+      <!-- BGP clear commands -->
+      <token name="bgp" argument="protocol" help="BGP routing protocol">
+	<token name="neighbor" help="BGP neighbors" cmd="cmd_clear_bgp_neighbor">
+	    <token name="hard" argument="type" help="Reset BGP session" cmd="cmd_clear_bgp_neighbor"/>
+        <token name="soft" argument="type" help="Re-sends the current Adj-Rib-Out to this neighbor" cmd="cmd_clear_bgp_neighbor"/>
+        <token name="soft-in" argument="type" help="Requests the Adj-Rib-In for this neighbor to be re-sent using the BGP Route Refresh feature." cmd="cmd_clear_bgp_neighbor"/>
+        <token name="NEIGHBOR" help="BGP neighbor" argument="neighbor" kind="string" cmd="cmd_clear_bgp_neighbor">
+        <token name="hard" argument="type" help="Reset BGP session" cmd="cmd_clear_bgp_neighbor"/>
+        <token name="soft" argument="type" help="Re-sends the current Adj-Rib-Out to this neighbor" cmd="cmd_clear_bgp_neighbor"/>
+        <token name="soft-in" argument="type" help="Requests the Adj-Rib-In for this neighbor to be re-sent using the BGP Route Refresh feature." cmd="cmd_clear_bgp_neighbor"/>
+    </token>
+	</token>
+      </token>
+
     </token>
   </tree>
 

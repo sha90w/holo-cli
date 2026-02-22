@@ -215,10 +215,17 @@ fn parse_tag_token(
         "cmd_show_mpls_ldp_binding_fec" => {
             internal_commands::cmd_show_mpls_ldp_binding_fec
         }
+        "cmd_show_route" => internal_commands::cmd_show_route,
+        "cmd_show_bgp_summary" => internal_commands::cmd_show_bgp_summary,
+        "cmd_show_bgp_neighbor" => internal_commands::cmd_show_bgp_neighbor,
+        "cmd_show_bgp_neighbor_detail" => {
+            internal_commands::cmd_show_bgp_neighbor_detail
+        }
         "cmd_clear_isis_adjacency" => {
             internal_commands::cmd_clear_isis_adjacency
         }
         "cmd_clear_isis_database" => internal_commands::cmd_clear_isis_database,
+        "cmd_clear_bgp_neighbor" => internal_commands::cmd_clear_bgp_neighbor,
         _ => panic!("unknown command name: {}", name),
     });
 
