@@ -20,6 +20,8 @@ pub enum ParserError {
     NoMatch(String),
     Incomplete(NodeId),
     Ambiguous(Vec<NodeId>),
+    NotPipeable,
+    UnknownPipeCommand(String),
 }
 
 // ===== impl Error =====
@@ -56,6 +58,12 @@ impl std::fmt::Display for ParserError {
             }
             ParserError::Incomplete(_) => write!(f, "incomplete command"),
             ParserError::Ambiguous(_) => write!(f, "ambiguous command"),
+            ParserError::NotPipeable => {
+                write!(f, "command does not support pipe filters")
+            }
+            ParserError::UnknownPipeCommand(name) => {
+                write!(f, "unknown pipe command: {}", name)
+            }
         }
     }
 }

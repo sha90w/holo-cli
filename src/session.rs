@@ -4,6 +4,8 @@
 // SPDX-License-Identifier: MIT
 //
 
+use std::io::Write;
+
 use derive_new::new;
 use enum_as_inner::EnumAsInner;
 use indextree::NodeId;
@@ -20,7 +22,6 @@ use crate::{YANG_CTX, token_yang};
 
 static DEFAULT_HOSTNAME: &str = "holo";
 
-#[derive(Debug)]
 pub struct Session {
     hostname: String,
     prompt: String,
@@ -29,6 +30,7 @@ pub struct Session {
     running: DataTree<'static>,
     candidate: Option<DataTree<'static>>,
     grpc_client: GrpcClient,
+    writer: Box<dyn Write + Send>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, EnumAsInner)]
@@ -81,7 +83,16 @@ impl Session {
             running,
             candidate: None,
             grpc_client,
+            writer: Box::new(std::io::stdout()),
         }
+    }
+
+    pub fn writer_mut(&mut self) -> &mut dyn Write {
+        self.writer.as_mut()
+    }
+
+    pub fn set_writer(&mut self, w: Box<dyn Write + Send>) {
+        self.writer = w;
     }
 
     pub fn update_hostname(&mut self) {

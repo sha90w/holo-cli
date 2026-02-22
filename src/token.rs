@@ -26,6 +26,7 @@ pub struct Token {
     pub argument: Option<String>,
     pub action: Option<Action>,
     pub node_update: bool,
+    pub pipeable: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -94,6 +95,7 @@ impl Token {
         argument: Option<S>,
         action: Option<Action>,
         node_update: bool,
+        pipeable: bool,
     ) -> Token {
         Token {
             name: name.into(),
@@ -102,6 +104,7 @@ impl Token {
             argument: argument.map(|s| s.into()),
             action,
             node_update,
+            pipeable,
         }
     }
 

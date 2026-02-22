@@ -10,6 +10,7 @@ use derive_new::new;
 use indextree::NodeId;
 
 use crate::error::ParserError;
+use crate::pipe::{ParsedPipeStage, PipeRegistry};
 use crate::session::Session;
 use crate::token::{Commands, TokenKind};
 
@@ -22,23 +23,12 @@ pub struct ParsedCommand {
 
 pub type ParsedArgs = VecDeque<(String, String)>;
 
-// ===== global functions =====
-
-pub fn normalize_input_line(line: &str) -> Option<String> {
-    // Ignore "!" comments.
-    // TODO: allow "!" within user input like interface descriptions
-    let line = line.split('!').next()?;
-
-    // Remove redundant whitespaces.
-    let line = line.split_whitespace().collect::<Vec<_>>().join(" ");
-
-    // Handle empty input.
-    if line.is_empty() {
-        return None;
-    }
-
-    Some(line)
+pub struct ParsedLine {
+    pub command: ParsedCommand,
+    pub pipes: Vec<ParsedPipeStage>,
 }
+
+// ===== global functions =====
 
 fn get_tokens(
     commands: &Commands,
@@ -208,4 +198,67 @@ pub fn parse_command(
     // Restore original CLI node and return the original error.
     session.mode_set(orig_mode);
     orig_ret
+}
+
+pub fn parse_line(
+    session: &mut Session,
+    commands: &Commands,
+    pipe_registry: &PipeRegistry,
+    line: &str,
+) -> Result<ParsedLine, ParserError> {
+    // Strip "!" comments from the whole line before splitting on pipes.
+    let line = match line.split('!').next() {
+        Some(s) => s,
+        None => return Err(ParserError::NoMatch(line.to_owned())),
+    };
+
+    // Split on " | " to separate the CLI command from pipe stages.
+    let mut parts = line.splitn(2, " | ");
+    let cli_part = parts.next().unwrap_or("").trim();
+    let pipe_tail = parts.next(); // everything after the first " | "
+
+    // Normalize CLI part and bail out early on empty input.
+    let cli_part = cli_part.split_whitespace().collect::<Vec<_>>().join(" ");
+    if cli_part.is_empty() {
+        return Err(ParserError::NoMatch(line.to_owned()));
+    }
+
+    // Parse the CLI command using the existing machinery.
+    let command = parse_command(session, commands, &cli_part)?;
+
+    // Parse pipe stages if present.
+    let pipes = if let Some(tail) = pipe_tail {
+        // Validate that the matched command supports piping.
+        let token = commands.get_token(command.token_id);
+        if !token.pipeable {
+            return Err(ParserError::NotPipeable);
+        }
+
+        // Each " | "-separated segment is one pipe stage.
+        let mut stages = Vec::new();
+        for segment in tail.split(" | ") {
+            let segment = segment.trim();
+            if segment.is_empty() {
+                continue;
+            }
+            let mut words = segment.split_whitespace();
+            let name = match words.next() {
+                Some(n) => n,
+                None => continue,
+            };
+            if pipe_registry.get(name).is_none() {
+                return Err(ParserError::UnknownPipeCommand(name.to_owned()));
+            }
+            let args: Vec<String> = words.map(|w| w.to_owned()).collect();
+            stages.push(ParsedPipeStage {
+                name: name.to_owned(),
+                args,
+            });
+        }
+        stages
+    } else {
+        Vec::new()
+    };
+
+    Ok(ParsedLine { command, pipes })
 }

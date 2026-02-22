@@ -5,8 +5,7 @@
 //
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
-use std::process::{Child, Command, Stdio};
+use std::fmt::Write as FmtWrite;
 
 use chrono::prelude::*;
 use indextree::NodeId;
@@ -223,8 +222,11 @@ impl<'a> YangTableBuilder<'a> {
         Self::show_path(&mut table, dnode, &self.paths, values);
 
         // Print the table to stdout.
-        if let Err(error) = page_table(self.session, &table) {
-            println!("% failed to display data: {}", error);
+        if !table.is_empty() {
+            if let Err(error) = table.print(self.session.writer_mut()) {
+                println!("% failed to display data: {}", error);
+            }
+            let _ = writeln!(self.session.writer_mut());
         }
 
         Ok(())
@@ -244,66 +246,6 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
     }
 
     None
-}
-
-fn pager() -> Result<Child, std::io::Error> {
-    Command::new("less")
-        // Exit immediately if the data fits on one screen.
-        .arg("-F")
-        // Do not clear the screen on exit.
-        .arg("-X")
-        .stdin(Stdio::piped())
-        .spawn()
-}
-
-fn page_output(session: &Session, data: &str) -> Result<(), std::io::Error> {
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(data.as_bytes())?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the data directly to the console.
-        println!("{}", data);
-    }
-
-    Ok(())
-}
-
-fn page_table(session: &Session, table: &Table) -> Result<(), std::io::Error> {
-    if table.is_empty() {
-        return Ok(());
-    }
-
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Print the table.
-        let mut output = Vec::new();
-        table.print(&mut output)?;
-        writeln!(output)?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(&output)?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the table directly to the console.
-        table.printstd();
-        println!();
-    }
-
-    Ok(())
 }
 
 fn fetch_data(
@@ -646,7 +588,7 @@ pub fn cmd_show_config(
         Some(_) => panic!("unknown format"),
         None => cmd_show_config_cmds(config, with_defaults),
     };
-    if let Err(error) = page_output(session, &data) {
+    if let Err(error) = session.writer_mut().write_all(data.as_bytes()) {
         println!("% failed to print configuration: {}", error)
     }
 
@@ -693,7 +635,8 @@ pub fn cmd_show_state(
     match session.get(proto::get_request::DataType::State, format, false, xpath)
     {
         Ok(proto::data_tree::Data::DataString(data)) => {
-            if let Err(error) = page_output(session, &data) {
+            if let Err(error) = session.writer_mut().write_all(data.as_bytes())
+            {
                 println!("% failed to print state data: {}", error)
             }
         }
@@ -708,7 +651,7 @@ pub fn cmd_show_state(
 
 pub fn cmd_show_yang_modules(
     _commands: &Commands,
-    _session: &mut Session,
+    session: &mut Session,
     _args: ParsedArgs,
 ) -> Result<bool, String> {
     // Create the table
@@ -734,10 +677,12 @@ pub fn cmd_show_yang_modules(
     }
 
     // Print the table to stdout
-    println!(" Flags: I - Implemented");
-    println!();
-    table.printstd();
-    println!();
+    let _ = writeln!(session.writer_mut(), " Flags: I - Implemented");
+    let _ = writeln!(session.writer_mut());
+    if let Err(error) = table.print(session.writer_mut()) {
+        println!("% failed to display data: {}", error);
+    }
+    let _ = writeln!(session.writer_mut());
 
     Ok(false)
 }
@@ -947,8 +892,6 @@ pub fn cmd_show_ospf_interface_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -981,9 +924,11 @@ pub fn cmd_show_ospf_interface_detail(
 
             // Iterate over OSPF interfaces.
             for dnode in dnode.find_xpath(&xpath_iface).unwrap() {
-                writeln!(output, "{}", dnode.child_value("name")).unwrap();
-                writeln!(output, " instance: {}", instance).unwrap();
-                writeln!(output, " area: {}", area).unwrap();
+                writeln!(session.writer_mut(), "{}", dnode.child_value("name"))
+                    .unwrap();
+                writeln!(session.writer_mut(), " instance: {}", instance)
+                    .unwrap();
+                writeln!(session.writer_mut(), " area: {}", area).unwrap();
                 for dnode in dnode
                     .children()
                     .filter(|dnode| !dnode.schema().is_list_key())
@@ -991,26 +936,33 @@ pub fn cmd_show_ospf_interface_detail(
                     let snode = dnode.schema();
                     let snode_name = snode.name();
                     if let Some(value) = dnode.value_canonical() {
-                        writeln!(output, " {}: {}", snode_name, value).unwrap();
+                        writeln!(
+                            session.writer_mut(),
+                            " {}: {}",
+                            snode_name,
+                            value
+                        )
+                        .unwrap();
                     } else if snode_name == "statistics" {
-                        writeln!(output, " statistics").unwrap();
+                        writeln!(session.writer_mut(), " statistics").unwrap();
                         for dnode in dnode.children() {
                             let snode = dnode.schema();
                             let snode_name = snode.name();
                             if let Some(value) = dnode.value_canonical() {
-                                writeln!(output, "  {}: {}", snode_name, value)
-                                    .unwrap();
+                                writeln!(
+                                    session.writer_mut(),
+                                    "  {}: {}",
+                                    snode_name,
+                                    value
+                                )
+                                .unwrap();
                             }
                         }
                     }
                 }
-                writeln!(output).unwrap();
+                writeln!(session.writer_mut()).unwrap();
             }
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -1108,8 +1060,6 @@ pub fn cmd_show_ospf_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -1149,14 +1099,16 @@ pub fn cmd_show_ospf_neighbor_detail(
                 // Iterate over OSPF neighbors.
                 for dnode in dnode.find_xpath(&xpath_nbr).unwrap() {
                     writeln!(
-                        output,
+                        session.writer_mut(),
                         "{}",
                         dnode.child_value("neighbor-router-id")
                     )
                     .unwrap();
-                    writeln!(output, " instance: {}", instance).unwrap();
-                    writeln!(output, " area: {}", area).unwrap();
-                    writeln!(output, " interface: {}", ifname).unwrap();
+                    writeln!(session.writer_mut(), " instance: {}", instance)
+                        .unwrap();
+                    writeln!(session.writer_mut(), " area: {}", area).unwrap();
+                    writeln!(session.writer_mut(), " interface: {}", ifname)
+                        .unwrap();
                     for dnode in dnode
                         .children()
                         .filter(|dnode| !dnode.schema().is_list_key())
@@ -1164,34 +1116,37 @@ pub fn cmd_show_ospf_neighbor_detail(
                         let snode = dnode.schema();
                         let snode_name = snode.name();
                         if let Some(value) = dnode.value_canonical() {
-                            writeln!(output, " {}: {}", snode_name, value)
-                                .unwrap();
+                            writeln!(
+                                session.writer_mut(),
+                                " {}: {}",
+                                snode_name,
+                                value
+                            )
+                            .unwrap();
                         } else if snode_name == "statistics"
                             || snode_name == "graceful-restart"
                         {
-                            writeln!(output, " statistics").unwrap();
+                            writeln!(session.writer_mut(), " statistics")
+                                .unwrap();
                             for dnode in dnode.children() {
                                 let snode = dnode.schema();
                                 let snode_name = snode.name();
                                 if let Some(value) = dnode.value_canonical() {
                                     writeln!(
-                                        output,
+                                        session.writer_mut(),
                                         "  {}: {}",
-                                        snode_name, value
+                                        snode_name,
+                                        value
                                     )
                                     .unwrap();
                                 }
                             }
                         }
                     }
-                    writeln!(output).unwrap();
+                    writeln!(session.writer_mut()).unwrap();
                 }
             }
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -1450,8 +1405,6 @@ pub fn cmd_show_rip_interface_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ripv2" => PROTOCOL_RIPV2,
@@ -1485,8 +1438,13 @@ pub fn cmd_show_rip_interface_detail(
         // Iterate over RIP interfaces.
         for dnode in dnode.find_xpath(&xpath_iface).unwrap() {
             // "interface" keyword is used to identify interface name
-            writeln!(output, "{}", dnode.child_value("interface")).unwrap();
-            writeln!(output, " instance: {}", instance).unwrap();
+            writeln!(
+                session.writer_mut(),
+                "{}",
+                dnode.child_value("interface")
+            )
+            .unwrap();
+            writeln!(session.writer_mut(), " instance: {}", instance).unwrap();
             for dnode in dnode
                 .children()
                 .filter(|dnode| !dnode.schema().is_list_key())
@@ -1494,25 +1452,32 @@ pub fn cmd_show_rip_interface_detail(
                 let snode = dnode.schema();
                 let snode_name = snode.name();
                 if let Some(value) = dnode.value_canonical() {
-                    writeln!(output, " {}: {}", snode_name, value).unwrap();
+                    writeln!(
+                        session.writer_mut(),
+                        " {}: {}",
+                        snode_name,
+                        value
+                    )
+                    .unwrap();
                 } else if snode_name == "statistics" {
-                    writeln!(output, " statistics").unwrap();
+                    writeln!(session.writer_mut(), " statistics").unwrap();
                     for dnode in dnode.children() {
                         let snode = dnode.schema();
                         let snode_name = snode.name();
                         if let Some(value) = dnode.value_canonical() {
-                            writeln!(output, "  {}: {}", snode_name, value)
-                                .unwrap();
+                            writeln!(
+                                session.writer_mut(),
+                                "  {}: {}",
+                                snode_name,
+                                value
+                            )
+                            .unwrap();
                         }
                     }
                 }
             }
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -1551,8 +1516,6 @@ pub fn cmd_show_rip_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let (protocol, afi, address) = match get_arg(&mut args, "protocol").as_str()
     {
@@ -1587,8 +1550,9 @@ pub fn cmd_show_rip_neighbor_detail(
         // Iterate over RIP neighbors.
         for dnode in dnode.find_xpath(&xpath_neighbor).unwrap() {
             // "address" keyword is used to identify the afi address type
-            writeln!(output, "{}", dnode.child_value(address)).unwrap();
-            writeln!(output, " instance: {}", instance).unwrap();
+            writeln!(session.writer_mut(), "{}", dnode.child_value(address))
+                .unwrap();
+            writeln!(session.writer_mut(), " instance: {}", instance).unwrap();
             for dnode in dnode
                 .children()
                 .filter(|dnode| !dnode.schema().is_list_key())
@@ -1596,15 +1560,17 @@ pub fn cmd_show_rip_neighbor_detail(
                 let snode = dnode.schema();
                 let snode_name = snode.name();
                 if let Some(value) = dnode.value_canonical() {
-                    writeln!(output, " {}: {}", snode_name, value).unwrap();
+                    writeln!(
+                        session.writer_mut(),
+                        " {}: {}",
+                        snode_name,
+                        value
+                    )
+                    .unwrap();
                 }
             }
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -1684,8 +1650,6 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let name = get_opt_arg(&mut args, "name");
 
@@ -1714,8 +1678,9 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
 
         // Iterate over MPLS LDP interfaces.
         for dnode in dnode.find_xpath(&xpath_iface).unwrap() {
-            writeln!(output, "{}", dnode.child_value("name")).unwrap();
-            writeln!(output, " instance: {}", instance).unwrap();
+            writeln!(session.writer_mut(), "{}", dnode.child_value("name"))
+                .unwrap();
+            writeln!(session.writer_mut(), " instance: {}", instance).unwrap();
             for dnode in dnode
                 .children()
                 .filter(|dnode| !dnode.schema().is_list_key())
@@ -1723,36 +1688,52 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
                 let snode = dnode.schema();
                 let snode_name = snode.name();
                 if let Some(value) = dnode.value_canonical() {
-                    writeln!(output, " {}: {}", snode_name, value).unwrap();
+                    writeln!(
+                        session.writer_mut(),
+                        " {}: {}",
+                        snode_name,
+                        value
+                    )
+                    .unwrap();
                 } else if snode_name == "address-families" {
-                    writeln!(output, "  {}:", snode_name).unwrap();
-                    writeln!(output, "   address-family:").unwrap();
-                    writeln!(output, "    ipv4:").unwrap();
-                    writeln!(output, "     hello-adjacencies:").unwrap();
-                    writeln!(output, "      hello-adjacency:").unwrap();
+                    writeln!(session.writer_mut(), "  {}:", snode_name)
+                        .unwrap();
+                    writeln!(session.writer_mut(), "   address-family:")
+                        .unwrap();
+                    writeln!(session.writer_mut(), "    ipv4:").unwrap();
+                    writeln!(session.writer_mut(), "     hello-adjacencies:")
+                        .unwrap();
+                    writeln!(session.writer_mut(), "      hello-adjacency:")
+                        .unwrap();
                     for dnode in dnode.find_xpath(&xpath_adjacency).unwrap() {
                         for dnode in dnode.children() {
                             let snode = dnode.schema();
                             let snode_name = snode.name();
                             if let Some(value) = dnode.value_canonical() {
                                 writeln!(
-                                    output,
+                                    session.writer_mut(),
                                     "       {}: {}",
-                                    snode_name, value
+                                    snode_name,
+                                    value
                                 )
                                 .unwrap();
                             } else {
-                                writeln!(output, "       {}:", snode_name)
-                                    .unwrap();
+                                writeln!(
+                                    session.writer_mut(),
+                                    "       {}:",
+                                    snode_name
+                                )
+                                .unwrap();
                                 for dnode in dnode.children() {
                                     let snode = dnode.schema();
                                     let snode_name = snode.name();
                                     if let Some(value) = dnode.value_canonical()
                                     {
                                         writeln!(
-                                            output,
+                                            session.writer_mut(),
                                             "        {}: {}",
-                                            snode_name, value
+                                            snode_name,
+                                            value
                                         )
                                         .unwrap();
                                     }
@@ -1762,12 +1743,8 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
                     }
                 }
             }
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -1800,8 +1777,6 @@ pub fn cmd_show_mpls_ldp_peer_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let lsr_id = get_opt_arg(&mut args, "lsr-id");
 
@@ -1830,8 +1805,9 @@ pub fn cmd_show_mpls_ldp_peer_detail(
 
         // Iterate over MPLS LDP peers.
         for dnode in dnode.find_xpath(&xpath_peer).unwrap() {
-            writeln!(output, "{}", dnode.child_value("lsr-id")).unwrap();
-            writeln!(output, " instance: {}", instance).unwrap();
+            writeln!(session.writer_mut(), "{}", dnode.child_value("lsr-id"))
+                .unwrap();
+            writeln!(session.writer_mut(), " instance: {}", instance).unwrap();
             for dnode in dnode
                 .children()
                 .filter(|dnode| !dnode.schema().is_list_key())
@@ -1839,36 +1815,52 @@ pub fn cmd_show_mpls_ldp_peer_detail(
                 let snode = dnode.schema();
                 let snode_name = snode.name();
                 if let Some(value) = dnode.value_canonical() {
-                    writeln!(output, " {}: {}", snode_name, value).unwrap();
+                    writeln!(
+                        session.writer_mut(),
+                        " {}: {}",
+                        snode_name,
+                        value
+                    )
+                    .unwrap();
                 } else if snode_name == "address-families" {
-                    writeln!(output, "  {}:", snode_name).unwrap();
-                    writeln!(output, "   address-family:").unwrap();
-                    writeln!(output, "    ipv4:").unwrap();
-                    writeln!(output, "     hello-adjacencies:").unwrap();
-                    writeln!(output, "      hello-adjacency:").unwrap();
+                    writeln!(session.writer_mut(), "  {}:", snode_name)
+                        .unwrap();
+                    writeln!(session.writer_mut(), "   address-family:")
+                        .unwrap();
+                    writeln!(session.writer_mut(), "    ipv4:").unwrap();
+                    writeln!(session.writer_mut(), "     hello-adjacencies:")
+                        .unwrap();
+                    writeln!(session.writer_mut(), "      hello-adjacency:")
+                        .unwrap();
                     for dnode in dnode.find_xpath(&xpath_adjacency).unwrap() {
                         for dnode in dnode.children() {
                             let snode = dnode.schema();
                             let snode_name = snode.name();
                             if let Some(value) = dnode.value_canonical() {
                                 writeln!(
-                                    output,
+                                    session.writer_mut(),
                                     "       {}: {}",
-                                    snode_name, value
+                                    snode_name,
+                                    value
                                 )
                                 .unwrap();
                             } else {
-                                writeln!(output, "       {}:", snode_name)
-                                    .unwrap();
+                                writeln!(
+                                    session.writer_mut(),
+                                    "       {}:",
+                                    snode_name
+                                )
+                                .unwrap();
                                 for dnode in dnode.children() {
                                     let snode = dnode.schema();
                                     let snode_name = snode.name();
                                     if let Some(value) = dnode.value_canonical()
                                     {
                                         writeln!(
-                                            output,
+                                            session.writer_mut(),
                                             "        {}: {}",
-                                            snode_name, value
+                                            snode_name,
+                                            value
                                         )
                                         .unwrap();
                                     }
@@ -1877,31 +1869,38 @@ pub fn cmd_show_mpls_ldp_peer_detail(
                         }
                     }
                 } else if snode_name == "received-peer-state" {
-                    writeln!(output, "  {}:", snode_name).unwrap();
-                    writeln!(output, "   capability:").unwrap();
+                    writeln!(session.writer_mut(), "  {}:", snode_name)
+                        .unwrap();
+                    writeln!(session.writer_mut(), "   capability:").unwrap();
                     for dnode in dnode.find_xpath(&xpath_capability).unwrap() {
                         for dnode in dnode.children() {
                             let snode = dnode.schema();
                             let snode_name = snode.name();
                             if let Some(value) = dnode.value_canonical() {
                                 writeln!(
-                                    output,
+                                    session.writer_mut(),
                                     "    {}: {}",
-                                    snode_name, value
+                                    snode_name,
+                                    value
                                 )
                                 .unwrap();
                             } else {
-                                writeln!(output, "    {}:", snode_name)
-                                    .unwrap();
+                                writeln!(
+                                    session.writer_mut(),
+                                    "    {}:",
+                                    snode_name
+                                )
+                                .unwrap();
                                 for dnode in dnode.children() {
                                     let snode = dnode.schema();
                                     let snode_name = snode.name();
                                     if let Some(value) = dnode.value_canonical()
                                     {
                                         writeln!(
-                                            output,
+                                            session.writer_mut(),
                                             "     {}: {}",
-                                            snode_name, value
+                                            snode_name,
+                                            value
                                         )
                                         .unwrap();
                                     }
@@ -1914,23 +1913,35 @@ pub fn cmd_show_mpls_ldp_peer_detail(
                     || snode_name == "tcp-connection"
                     || snode_name == "statistics"
                 {
-                    writeln!(output, "  {}:", snode_name).unwrap();
+                    writeln!(session.writer_mut(), "  {}:", snode_name)
+                        .unwrap();
                     for dnode in dnode.children() {
                         let snode = dnode.schema();
                         let snode_name = snode.name();
                         if let Some(value) = dnode.value_canonical() {
-                            writeln!(output, "   {}: {}", snode_name, value)
-                                .unwrap();
+                            writeln!(
+                                session.writer_mut(),
+                                "   {}: {}",
+                                snode_name,
+                                value
+                            )
+                            .unwrap();
                         } else {
-                            writeln!(output, "   {}:", snode_name).unwrap();
+                            writeln!(
+                                session.writer_mut(),
+                                "   {}:",
+                                snode_name
+                            )
+                            .unwrap();
                             for dnode in dnode.children() {
                                 let snode = dnode.schema();
                                 let snode_name = snode.name();
                                 if let Some(value) = dnode.value_canonical() {
                                     writeln!(
-                                        output,
+                                        session.writer_mut(),
                                         "    {}: {}",
-                                        snode_name, value
+                                        snode_name,
+                                        value
                                     )
                                     .unwrap();
                                 }
@@ -1939,12 +1950,8 @@ pub fn cmd_show_mpls_ldp_peer_detail(
                     }
                 }
             }
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -2181,8 +2188,6 @@ pub fn cmd_show_bgp_neighbor(
 ) -> Result<bool, String> {
     let attrs = bgp_get_attrs(session).unwrap();
 
-    let mut output = String::new();
-
     let neighbor = get_arg(&mut args, "neighbor");
     let rt_type = get_arg(&mut args, "type");
     let afi = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
@@ -2216,22 +2221,22 @@ pub fn cmd_show_bgp_neighbor(
 
     let xpath_routes = format!("{}/route", &xpath_req);
 
-    writeln!(output, "\nAddress family: {afi}").unwrap();
+    writeln!(session.writer_mut(), "\nAddress family: {afi}").unwrap();
     writeln!(
-        output,
+        session.writer_mut(),
         "{:>20} {:>20} {:>5} {:>5} AS Path",
-        "Prefix", "NextHop", "MED", "LocalPref"
+        "Prefix",
+        "NextHop",
+        "MED",
+        "LocalPref"
     )
     .unwrap();
     for route in data.find_xpath(&xpath_routes).unwrap() {
         let prefix = route.child_opt_value("prefix").unwrap();
         let index = route.child_opt_value("attr-index").unwrap();
         let route_attrs = attrs.get(&index).unwrap();
-        writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
+        writeln!(session.writer_mut(), "{:>20} {}", prefix, route_attrs)
+            .unwrap();
     }
 
     Ok(false)
@@ -2249,7 +2254,6 @@ pub fn cmd_show_bgp_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
     let neighbor_addr = get_opt_arg(&mut args, "neighbor");
 
     let xpath_bgp_instance = format!(
@@ -2283,17 +2287,19 @@ pub fn cmd_show_bgp_neighbor_detail(
                 .unwrap_or("-".to_owned());
 
             writeln!(
-                output,
+                session.writer_mut(),
                 "BGP neighbor is {}, remote AS {}, {} link",
-                remote_addr, remote_as, peer_type
+                remote_addr,
+                remote_as,
+                peer_type
             )
             .unwrap();
 
-            writeln!(output, " Description: {}", desc).unwrap();
+            writeln!(session.writer_mut(), " Description: {}", desc).unwrap();
 
             let remote_rid = dnode_nbr.child_value("identifier");
             writeln!(
-                output,
+                session.writer_mut(),
                 "  BGP version 4, remote router ID {}",
                 remote_rid
             )
@@ -2306,9 +2312,10 @@ pub fn cmd_show_bgp_neighbor_detail(
                 let hold_time: u32 = hold_time_str.parse().unwrap_or(0);
                 let keepalive = hold_time / 3;
                 writeln!(
-                    output,
+                    session.writer_mut(),
                     "  Hold time is {}, keepalive interval is {} seconds",
-                    hold_time, keepalive
+                    hold_time,
+                    keepalive
                 )
                 .unwrap();
             }
@@ -2325,20 +2332,25 @@ pub fn cmd_show_bgp_neighbor_detail(
                 .num_seconds();
             let uptime_str = uptime_from_secs(delta);
 
-            writeln!(output, "  BGP state is {}, up for {}", state, uptime_str)
-                .unwrap();
+            writeln!(
+                session.writer_mut(),
+                "  BGP state is {}, up for {}",
+                state,
+                uptime_str
+            )
+            .unwrap();
 
             let transitions =
                 dnode_nbr.relative_value("statistics/established-transitions");
             writeln!(
-                output,
+                session.writer_mut(),
                 "  Number of transitions to established: {}",
                 transitions
             )
             .unwrap();
 
             // Capabilities
-            writeln!(output, "  Neighbor Capabilities:").unwrap();
+            writeln!(session.writer_mut(), "  Neighbor Capabilities:").unwrap();
             let caps_xpath = "capabilities/negotiated-capabilities";
             if let Ok(iter) = dnode_nbr.find_xpath(caps_xpath) {
                 let caps: Vec<String> = iter
@@ -2349,8 +2361,12 @@ pub fn cmd_show_bgp_neighbor_detail(
                     .collect();
 
                 if !caps.is_empty() {
-                    writeln!(output, "    Options: <{}>", caps.join(" "))
-                        .unwrap();
+                    writeln!(
+                        session.writer_mut(),
+                        "    Options: <{}>",
+                        caps.join(" ")
+                    )
+                    .unwrap();
                 }
             }
 
@@ -2365,7 +2381,7 @@ pub fn cmd_show_bgp_neighbor_detail(
             }
             if !afi_names.is_empty() {
                 writeln!(
-                    output,
+                    session.writer_mut(),
                     "\n  Address families configured: {}",
                     afi_names.join(" ")
                 )
@@ -2379,9 +2395,16 @@ pub fn cmd_show_bgp_neighbor_detail(
                 .ok()
                 .and_then(|mut x| x.next())
             {
-                writeln!(output, "\n  Message Statistics:").unwrap();
-                writeln!(output, "    {:25} {:>10} {:>10}", "", "Sent", "Rcvd")
+                writeln!(session.writer_mut(), "\n  Message Statistics:")
                     .unwrap();
+                writeln!(
+                    session.writer_mut(),
+                    "    {:25} {:>10} {:>10}",
+                    "",
+                    "Sent",
+                    "Rcvd"
+                )
+                .unwrap();
 
                 let sent_updates = stats_node.child_value("updates-sent");
                 let rcvd_updates = stats_node.child_value("updates-received");
@@ -2392,31 +2415,40 @@ pub fn cmd_show_bgp_neighbor_detail(
                 let rcvd_total = stats_node.child_value("total-received");
 
                 writeln!(
-                    output,
+                    session.writer_mut(),
                     "    {:25} {:>10} {:>10}",
-                    "Updates:", sent_updates, rcvd_updates
+                    "Updates:",
+                    sent_updates,
+                    rcvd_updates
                 )
                 .unwrap();
                 writeln!(
-                    output,
+                    session.writer_mut(),
                     "    {:25} {:>10} {:>10}",
-                    "Notifications:", sent_notif, rcvd_notif
+                    "Notifications:",
+                    sent_notif,
+                    rcvd_notif
                 )
                 .unwrap();
                 writeln!(
-                    output,
+                    session.writer_mut(),
                     "    {:25} {:>10} {:>10}",
-                    "Total messages:", sent_total, rcvd_total
+                    "Total messages:",
+                    sent_total,
+                    rcvd_total
                 )
                 .unwrap();
             }
 
             // Prefix Statistics
-            writeln!(output, "\n  Prefix Statistics:").unwrap();
+            writeln!(session.writer_mut(), "\n  Prefix Statistics:").unwrap();
             writeln!(
-                output,
+                session.writer_mut(),
                 "    {:20} {:>10} {:>10} {:>10}",
-                "", "Sent", "Rcvd", "Installed"
+                "",
+                "Sent",
+                "Rcvd",
+                "Installed"
             )
             .unwrap();
 
@@ -2431,20 +2463,24 @@ pub fn cmd_show_bgp_neighbor_detail(
                         afi_node.relative_value("prefixes/installed");
 
                     writeln!(
-                        output,
+                        session.writer_mut(),
                         "    {:20} {:>10} {:>10} {:>10}",
-                        name, sent, rcvd, installed
+                        name,
+                        sent,
+                        rcvd,
+                        installed
                     )
                     .unwrap();
                 }
             }
 
             // Local/Remote Addresses and Ports
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
             writeln!(
-                output,
+                session.writer_mut(),
                 " Local AS is {}, local router ID {}",
-                local_as, local_rid
+                local_as,
+                local_rid
             )
             .unwrap();
 
@@ -2453,24 +2489,22 @@ pub fn cmd_show_bgp_neighbor_detail(
             let remote_port = dnode_nbr.child_value("remote-port");
 
             writeln!(
-                output,
+                session.writer_mut(),
                 " Local TCP address is {}, local port is {}",
-                local_addr, local_port
+                local_addr,
+                local_port
             )
             .unwrap();
             writeln!(
-                output,
+                session.writer_mut(),
                 " Remote TCP address is {}, remote port is {}",
-                remote_addr, remote_port
+                remote_addr,
+                remote_port
             )
             .unwrap();
 
-            writeln!(output).unwrap();
+            writeln!(session.writer_mut()).unwrap();
         }
-    }
-
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
     }
 
     Ok(false)
@@ -2611,8 +2645,6 @@ pub fn cmd_show_route(
         return Ok(false);
     };
 
-    let mut output = String::new();
-
     for route in dnode.find_xpath(&route_xpath).unwrap() {
         let prefix = route.child_value("destination-prefix");
         let protocol = route.child_value("source-protocol");
@@ -2633,9 +2665,13 @@ pub fn cmd_show_route(
         let active_marker = if active { "*" } else { " " };
 
         writeln!(
-            output,
+            session.writer_mut(),
             "{:<20} {}[{}/{}] {}",
-            prefix, active_marker, protocol_name, preference, uptime
+            prefix,
+            active_marker,
+            protocol_name,
+            preference,
+            uptime
         )
         .unwrap();
 
@@ -2643,22 +2679,25 @@ pub fn cmd_show_route(
         let nh_iface = route.relative_opt_value("next-hop/outgoing-interface");
         match (nh_addr, nh_iface) {
             (Some(addr), Some(iface)) => {
-                writeln!(output, "{:>20} >  to {} via {}", "", addr, iface)
-                    .unwrap();
+                writeln!(
+                    session.writer_mut(),
+                    "{:>20} >  to {} via {}",
+                    "",
+                    addr,
+                    iface
+                )
+                .unwrap();
             }
             (Some(addr), None) => {
-                writeln!(output, "{:>20} >  to {}", "", addr).unwrap();
+                writeln!(session.writer_mut(), "{:>20} >  to {}", "", addr)
+                    .unwrap();
             }
             (None, Some(iface)) => {
-                writeln!(output, "{:>20} >  via {}", "", iface).unwrap();
+                writeln!(session.writer_mut(), "{:>20} >  via {}", "", iface)
+                    .unwrap();
             }
             (None, None) => {}
         }
-    }
-
-    if !output.is_empty() {
-        page_output(session, &output)
-            .map_err(|e| format!("% failed to display data: {}", e))?;
     }
 
     Ok(false)

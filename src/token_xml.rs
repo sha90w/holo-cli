@@ -68,6 +68,7 @@ fn parse_tag_token(
     let help = find_opt_attribute(&attributes, "help");
     let kind = find_opt_attribute(&attributes, "kind");
     let argument = find_opt_attribute(&attributes, "argument");
+    let pipeable = find_opt_attribute(&attributes, "pipeable") == Some("true");
     let cmd_name = find_opt_attribute(&attributes, "cmd");
     let callback = cmd_name.map(|name| match name {
         "cmd_config" => internal_commands::cmd_config,
@@ -156,7 +157,7 @@ fn parse_tag_token(
     let action = callback.map(|callback| Action::Callback(callback));
 
     // Add new token.
-    let token = Token::new(name, help, kind, argument, action, false);
+    let token = Token::new(name, help, kind, argument, action, false, pipeable);
 
     // Link new token.
     commands.add_token(parent, token)

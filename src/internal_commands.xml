@@ -6,177 +6,177 @@
     <token name="end" help="Terminate configuration session." cmd="cmd_end"/>
     <token name="list" help="Print command list." cmd="cmd_list"/>
     <token name="show" help="Show information about the system.">
-      <token name="running" argument="configuration" help="Show running configuration." cmd="cmd_show_config">
+      <token name="running" argument="configuration" help="Show running configuration." pipeable="true" cmd="cmd_show_config">
         <token name="format" help="Configuration format.">
-          <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="json" argument="format" help="JSON output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
-          <token name="xml" argument="format" help="XML output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="xml" argument="format" help="XML output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
         </token>
       </token>
-      <token name="state" help="Show operational state." cmd="cmd_show_state">
+      <token name="state" help="Show operational state." pipeable="true" cmd="cmd_show_state">
         <token name="xpath" help="XPath expression.">
-  	  <token name="xpath" argument="xpath" kind="string" help="XPath expression." cmd="cmd_show_state">
+  	  <token name="xpath" argument="xpath" kind="string" help="XPath expression." pipeable="true" cmd="cmd_show_state">
             <token name="format" help="Data format.">
-              <token name="json" argument="format" help="JSON output format." cmd="cmd_show_state"/>
-	      <token name="xml" argument="format" help="XML output format." cmd="cmd_show_state"/>
+              <token name="json" argument="format" help="JSON output format." pipeable="true" cmd="cmd_show_state"/>
+	      <token name="xml" argument="format" help="XML output format." pipeable="true" cmd="cmd_show_state"/>
             </token>
           </token>
         </token>
         <token name="format" help="Data format.">
-          <token name="json" argument="format" help="JSON output format." cmd="cmd_show_state"/>
-          <token name="xml" argument="format" help="XML output format." cmd="cmd_show_state"/>
+          <token name="json" argument="format" help="JSON output format." pipeable="true" cmd="cmd_show_state"/>
+          <token name="xml" argument="format" help="XML output format." pipeable="true" cmd="cmd_show_state"/>
         </token>
       </token>
       <token name="yang" help="YANG information.">
-        <token name="modules" help="Show loaded YANG modules." cmd="cmd_show_yang_modules"/>
+        <token name="modules" help="Show loaded YANG modules." pipeable="true" cmd="cmd_show_yang_modules"/>
       </token>
       <!-- IS-IS show commands -->
       <token name="isis" argument="protocol" help="IS-IS information">
-        <token name="interface" help="Interface information" cmd="cmd_show_isis_interface">
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_isis_interface"/>
+        <token name="interface" help="Interface information" pipeable="true" cmd="cmd_show_isis_interface">
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_isis_interface"/>
         </token>
-        <token name="database" help="Link state database" cmd="cmd_show_isis_database"/>
-        <token name="route" help="Routing table" cmd="cmd_show_isis_route"/>
-        <token name="adjacency" help="Adjacency information" cmd="cmd_show_isis_adjacency"/>
+        <token name="database" help="Link state database" pipeable="true" cmd="cmd_show_isis_database"/>
+        <token name="route" help="Routing table" pipeable="true" cmd="cmd_show_isis_route"/>
+        <token name="adjacency" help="Adjacency information" pipeable="true" cmd="cmd_show_isis_adjacency"/>
       </token>
       <!-- BGP show commands -->
       <token name="bgp" argument="protocol" help="BGP information">
         <token name="ipv4" argument="afi" help="Display IPv4 information">
-           <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+           <token name="summary" help="Summarized BGP information" pipeable="true" cmd="cmd_show_bgp_summary"/>
         </token>
         <token name="ipv6" argument="afi" help="Display IPv6 information">
-           <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+           <token name="summary" help="Summarized BGP information" pipeable="true" cmd="cmd_show_bgp_summary"/>
         </token>
-        <token name="summary" help="Summarized BGP information" cmd="cmd_show_bgp_summary"/>
+        <token name="summary" help="Summarized BGP information" pipeable="true" cmd="cmd_show_bgp_summary"/>
         <token name="neighbor" help="BGP neighbor information">
-            <token name="NEIGHBOR" help="BGP neighbor" argument="neighbor" kind="string" cmd="cmd_show_bgp_neighbor_detail">
-                <token name="received-routes" argument="type" help="Received routing information" cmd="cmd_show_bgp_neighbor">
-                   <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_bgp_neighbor"/>
-                   <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_bgp_neighbor"/>
+            <token name="NEIGHBOR" help="BGP neighbor" argument="neighbor" kind="string" pipeable="true" cmd="cmd_show_bgp_neighbor_detail">
+                <token name="received-routes" argument="type" help="Received routing information" pipeable="true" cmd="cmd_show_bgp_neighbor">
+                   <token name="ipv4" argument="afi" help="Display IPv4 routes" pipeable="true" cmd="cmd_show_bgp_neighbor"/>
+                   <token name="ipv6" argument="afi" help="Display IPv6 routes" pipeable="true" cmd="cmd_show_bgp_neighbor"/>
                 </token>
-                <token name="advertised-routes" argument="type" help="Advertised routing information" cmd="cmd_show_bgp_neighbor">
-                   <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_bgp_neighbor"/>
-                   <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_bgp_neighbor"/>
+                <token name="advertised-routes" argument="type" help="Advertised routing information" pipeable="true" cmd="cmd_show_bgp_neighbor">
+                   <token name="ipv4" argument="afi" help="Display IPv4 routes" pipeable="true" cmd="cmd_show_bgp_neighbor"/>
+                   <token name="ipv6" argument="afi" help="Display IPv6 routes" pipeable="true" cmd="cmd_show_bgp_neighbor"/>
                 </token>
             </token>
         </token>
       </token>
       <!-- OSPF show commands -->
       <token name="ospfv2" argument="protocol" help="OSPFv2 information">
-        <token name="interface" help="Interface information" cmd="cmd_show_ospf_interface">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_interface_detail"/>
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_ospf_interface">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_interface_detail"/>
+        <token name="interface" help="Interface information" pipeable="true" cmd="cmd_show_ospf_interface">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_interface_detail"/>
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_ospf_interface">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_interface_detail"/>
           </token>
         </token>
-	<token name="virtual-link" help="Virtual link information" cmd="cmd_show_ospf_vlink"/>
-        <token name="neighbor" help="Neighbor information" cmd="cmd_show_ospf_neighbor">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_neighbor_detail"/>
-          <token name="router_id" help="Neighbor Router ID" argument="router_id" kind="string" cmd="cmd_show_ospf_neighbor">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_neighbor_detail"/>
+	<token name="virtual-link" help="Virtual link information" pipeable="true" cmd="cmd_show_ospf_vlink"/>
+        <token name="neighbor" help="Neighbor information" pipeable="true" cmd="cmd_show_ospf_neighbor">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_neighbor_detail"/>
+          <token name="router_id" help="Neighbor Router ID" argument="router_id" kind="string" pipeable="true" cmd="cmd_show_ospf_neighbor">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_neighbor_detail"/>
           </token>
         </token>
-        <token name="hostnames" help="Router Hostnames" cmd="cmd_show_ospf_hostnames">
+        <token name="hostnames" help="Router Hostnames" pipeable="true" cmd="cmd_show_ospf_hostnames">
         </token>
 	<token name="database" help="Link state database">
-	  <token name="as" help="AS-Scope LSAs" cmd="cmd_show_ospf_database_as"/>
-	  <token name="area" help="Area-Scope LSAs" cmd="cmd_show_ospf_database_area"/>
-          <token name="link" help="Link-Scope LSAs" cmd="cmd_show_ospf_database_link"/>
+	  <token name="as" help="AS-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_as"/>
+	  <token name="area" help="Area-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_area"/>
+          <token name="link" help="Link-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_link"/>
         </token>
-        <token name="route" help="Route information" cmd="cmd_show_ospf_route">
-          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" cmd="cmd_show_ospf_route"/>
+        <token name="route" help="Route information" pipeable="true" cmd="cmd_show_ospf_route">
+          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" pipeable="true" cmd="cmd_show_ospf_route"/>
         </token>
       </token>
       <token name="ospfv3" argument="protocol" help="OSPFv3 information">
-        <token name="interface" help="Interface information" cmd="cmd_show_ospf_interface">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_interface_detail"/>
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_ospf_interface">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_interface_detail"/>
+        <token name="interface" help="Interface information" pipeable="true" cmd="cmd_show_ospf_interface">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_interface_detail"/>
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_ospf_interface">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_interface_detail"/>
           </token>
         </token>
-	<token name="virtual-link" help="Virtual link information" cmd="cmd_show_ospf_vlink"/>
-        <token name="neighbor" help="Neighbor information" cmd="cmd_show_ospf_neighbor">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_neighbor_detail"/>
-          <token name="router_id" help="Neighbor Router ID" argument="router_id" kind="string" cmd="cmd_show_ospf_neighbor">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_ospf_neighbor_detail"/>
+	<token name="virtual-link" help="Virtual link information" pipeable="true" cmd="cmd_show_ospf_vlink"/>
+        <token name="neighbor" help="Neighbor information" pipeable="true" cmd="cmd_show_ospf_neighbor">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_neighbor_detail"/>
+          <token name="router_id" help="Neighbor Router ID" argument="router_id" kind="string" pipeable="true" cmd="cmd_show_ospf_neighbor">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_ospf_neighbor_detail"/>
           </token>
         </token>
 	<token name="database" help="Link state database">
-	  <token name="as" help="AS-Scope LSAs" cmd="cmd_show_ospf_database_as"/>
-	  <token name="area" help="Area-Scope LSAs" cmd="cmd_show_ospf_database_area"/>
-          <token name="link" help="Link-Scope LSAs" cmd="cmd_show_ospf_database_link"/>
+	  <token name="as" help="AS-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_as"/>
+	  <token name="area" help="Area-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_area"/>
+          <token name="link" help="Link-Scope LSAs" pipeable="true" cmd="cmd_show_ospf_database_link"/>
         </token>
-        <token name="route" help="Route information" cmd="cmd_show_ospf_route">
-          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" cmd="cmd_show_ospf_route"/>
+        <token name="route" help="Route information" pipeable="true" cmd="cmd_show_ospf_route">
+          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" pipeable="true" cmd="cmd_show_ospf_route"/>
         </token>
-        <token name="hostnames" help="Router Hostnames" cmd="cmd_show_ospf_hostnames">
+        <token name="hostnames" help="Router Hostnames" pipeable="true" cmd="cmd_show_ospf_hostnames">
         </token>
       </token>
       <!-- RIP show commands -->
       <token name="ripv2" argument="protocol" help="RIPv2 information">
-        <token name="interface" help="Interface information" cmd="cmd_show_rip_interface">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_interface_detail"/>
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_rip_interface">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_interface_detail"/>
+        <token name="interface" help="Interface information" pipeable="true" cmd="cmd_show_rip_interface">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_interface_detail"/>
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_rip_interface">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_interface_detail"/>
           </token>
         </token>
-        <token name="neighbor" help="Neighbor information" cmd="cmd_show_rip_neighbor">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_neighbor_detail"/>
-          <token name="address" help="Neighbor IPv4 address" argument="address" kind="string" cmd="cmd_show_rip_neighbor">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_neighbor_detail"/>
+        <token name="neighbor" help="Neighbor information" pipeable="true" cmd="cmd_show_rip_neighbor">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_neighbor_detail"/>
+          <token name="address" help="Neighbor IPv4 address" argument="address" kind="string" pipeable="true" cmd="cmd_show_rip_neighbor">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_neighbor_detail"/>
           </token>
         </token>
-        <token name="route" help="Route information" cmd="cmd_show_rip_route">
-          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" cmd="cmd_show_rip_route"/>
+        <token name="route" help="Route information" pipeable="true" cmd="cmd_show_rip_route">
+          <token name="prefix" help="IPv4 prefix" argument="prefix" kind="string" pipeable="true" cmd="cmd_show_rip_route"/>
         </token>
       </token>
       <token name="ripng" argument="protocol" help="RIPng information">
-        <token name="interface" help="Interface information" cmd="cmd_show_rip_interface">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_interface_detail"/>
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_rip_interface">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_interface_detail"/>
+        <token name="interface" help="Interface information" pipeable="true" cmd="cmd_show_rip_interface">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_interface_detail"/>
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_rip_interface">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_interface_detail"/>
           </token>
         </token>
-        <token name="neighbor" help="Neighbor information" cmd="cmd_show_rip_neighbor">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_neighbor_detail"/>
-          <token name="address" help="Neighbor IPv6 address" argument="address" kind="string" cmd="cmd_show_rip_neighbor">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_rip_neighbor_detail"/>
+        <token name="neighbor" help="Neighbor information" pipeable="true" cmd="cmd_show_rip_neighbor">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_neighbor_detail"/>
+          <token name="address" help="Neighbor IPv6 address" argument="address" kind="string" pipeable="true" cmd="cmd_show_rip_neighbor">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_rip_neighbor_detail"/>
           </token>
         </token>
-        <token name="route" help="Route information" cmd="cmd_show_rip_route">
-          <token name="prefix" help="IPv6 prefix" argument="prefix" kind="string" cmd="cmd_show_rip_route"/>
+        <token name="route" help="Route information" pipeable="true" cmd="cmd_show_rip_route">
+          <token name="prefix" help="IPv6 prefix" argument="prefix" kind="string" pipeable="true" cmd="cmd_show_rip_route"/>
         </token>
       </token>
       <!-- MPLS LDP show commands -->
       <token name="mpls-ldp" argument="protocol" help="MPLS LDP information">
-        <token name="discovery" help="Discovery Hello Information" cmd="cmd_show_mpls_ldp_discovery">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_mpls_ldp_discovery_detail"/>
-          <token name="NAME" help="Interface name" argument="name" kind="string" cmd="cmd_show_mpls_ldp_discovery">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_mpls_ldp_discovery_detail"/>
+        <token name="discovery" help="Discovery Hello Information" pipeable="true" cmd="cmd_show_mpls_ldp_discovery">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_mpls_ldp_discovery_detail"/>
+          <token name="NAME" help="Interface name" argument="name" kind="string" pipeable="true" cmd="cmd_show_mpls_ldp_discovery">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_mpls_ldp_discovery_detail"/>
           </token>
         </token>
-        <token name="peer" help="Peer information" cmd="cmd_show_mpls_ldp_peer">
-          <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_mpls_ldp_peer_detail"/>
-          <token name="peer" help="Peer LSR-Id" argument="lsr-id" kind="string" cmd="cmd_show_mpls_ldp_peer">
-            <token name="detail" help="Detailed information" argument="detail" cmd="cmd_show_mpls_ldp_peer_detail"/>
+        <token name="peer" help="Peer information" pipeable="true" cmd="cmd_show_mpls_ldp_peer">
+          <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_mpls_ldp_peer_detail"/>
+          <token name="peer" help="Peer LSR-Id" argument="lsr-id" kind="string" pipeable="true" cmd="cmd_show_mpls_ldp_peer">
+            <token name="detail" help="Detailed information" argument="detail" pipeable="true" cmd="cmd_show_mpls_ldp_peer_detail"/>
           </token>
         </token>
         <token name="binding" help="Binding information">
-          <token name="address" help="Address bindings" cmd="cmd_show_mpls_ldp_binding_address">
-            <token name="address" help="Address value" argument="address" kind="string" cmd="cmd_show_mpls_ldp_binding_address"/>
+          <token name="address" help="Address bindings" pipeable="true" cmd="cmd_show_mpls_ldp_binding_address">
+            <token name="address" help="Address value" argument="address" kind="string" pipeable="true" cmd="cmd_show_mpls_ldp_binding_address"/>
           </token>
-          <token name="fec" help="FEC bindings" cmd="cmd_show_mpls_ldp_binding_fec">
-            <token name="fec" help="FEC value" argument="fec" kind="string" cmd="cmd_show_mpls_ldp_binding_fec"/>
+          <token name="fec" help="FEC bindings" pipeable="true" cmd="cmd_show_mpls_ldp_binding_fec">
+            <token name="fec" help="FEC value" argument="fec" kind="string" pipeable="true" cmd="cmd_show_mpls_ldp_binding_fec"/>
           </token>
         </token>
       </token>
       <!-- Route show commands -->
-      <token name="route" help="Routing table information" cmd="cmd_show_route">
-        <token name="ipv4" argument="afi" help="Display IPv4 routes" cmd="cmd_show_route"/>
-        <token name="ipv6" argument="afi" help="Display IPv6 routes" cmd="cmd_show_route"/>
+      <token name="route" help="Routing table information" pipeable="true" cmd="cmd_show_route">
+        <token name="ipv4" argument="afi" help="Display IPv4 routes" pipeable="true" cmd="cmd_show_route"/>
+        <token name="ipv6" argument="afi" help="Display IPv6 routes" pipeable="true" cmd="cmd_show_route"/>
       </token>
     </token>
     <token name="clear" help="Reset functions">
@@ -220,28 +220,28 @@
     <token name="pwd" help="Display current mode path." cmd="cmd_pwd"/>
     <token name="top" help="Return to top-level configuration mode." cmd="cmd_top"/>
     <token name="show" help="Show information about the system.">
-      <token name="candidate" argument="configuration" help="Show candidate configuration." cmd="cmd_show_config">
+      <token name="candidate" argument="configuration" help="Show candidate configuration." pipeable="true" cmd="cmd_show_config">
         <token name="format" help="Configuration format.">
-          <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="json" argument="format" help="JSON output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
-          <token name="xml" argument="format" help="XML output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="xml" argument="format" help="XML output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
         </token>
       </token>
-      <token name="running" argument="configuration" help="Show running configuration." cmd="cmd_show_config">
-        <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+      <token name="running" argument="configuration" help="Show running configuration." pipeable="true" cmd="cmd_show_config">
+        <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
         <token name="format" help="Configuration format.">
-          <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="json" argument="format" help="JSON output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
-          <token name="xml" argument="format" help="XML output format." cmd="cmd_show_config">
-            <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
+          <token name="xml" argument="format" help="XML output format." pipeable="true" cmd="cmd_show_config">
+            <token name="with-defaults" argument="with-defaults" help="Show default values." pipeable="true" cmd="cmd_show_config"/>
           </token>
         </token>
       </token>
-      <token name="changes" help="Show configuration changes." cmd="cmd_show_config_changes">
+      <token name="changes" help="Show configuration changes." pipeable="true" cmd="cmd_show_config_changes">
       </token>
     </token>
   </tree>

@@ -8,6 +8,7 @@ mod error;
 mod grpc;
 mod internal_commands;
 mod parser;
+mod pipe;
 mod session;
 mod terminal;
 mod token;
@@ -22,6 +23,7 @@ use yang4::context::{Context, ContextFlags};
 
 use crate::error::Error;
 use crate::grpc::GrpcClient;
+use crate::pipe::{PipeRegistry, build_output_chain};
 use crate::session::{CommandMode, Session};
 use crate::terminal::CliPrompt;
 use crate::token::{Action, Commands};
@@ -33,8 +35,9 @@ pub static YANG_CTX: OnceLock<Arc<Context>> = OnceLock::new();
 pub const YANG_MODULES_DIR: &str = "/usr/local/share/holo-cli/modules";
 
 pub struct Cli {
-    commands: Commands,
-    session: Session,
+    pub commands: Commands,
+    pub session: Session,
+    pub pipe_registry: PipeRegistry,
 }
 
 // ===== impl Cli =====
@@ -48,23 +51,59 @@ impl Cli {
         // Create CLI session.
         let session = Session::new(use_pager, grpc_client);
 
-        Cli { commands, session }
+        // Build pipe command registry.
+        let pipe_registry = pipe::default_registry();
+
+        Cli {
+            commands,
+            session,
+            pipe_registry,
+        }
     }
 
     fn enter_command(&mut self, line: &str) -> Result<bool, Error> {
-        // Normalize input line.
-        let line = match parser::normalize_input_line(line) {
-            Some(line) => line,
-            None => return Ok(false),
+        // Parse the full input line (handles comment stripping, pipe
+        // splitting, and CLI command parsing in one step).
+        let parsed = match parser::parse_line(
+            &mut self.session,
+            &self.commands,
+            &self.pipe_registry,
+            line,
+        ) {
+            Ok(p) => p,
+            // Empty / comment-only lines are silently ignored.
+            Err(crate::error::ParserError::NoMatch(ref s))
+                if s.trim().is_empty() =>
+            {
+                return Ok(false);
+            }
+            Err(e) => return Err(Error::Parser(e)),
         };
 
-        // Parse command.
-        let pcmd =
-            parser::parse_command(&mut self.session, &self.commands, &line)
-                .map_err(Error::Parser)?;
-        let token = self.commands.get_token(pcmd.token_id);
-        let negate = pcmd.negate;
-        let args = pcmd.args;
+        let token = self.commands.get_token(parsed.command.token_id);
+        let negate = parsed.command.negate;
+        let args = parsed.command.args;
+
+        // Build the output chain when pipe stages are present, then swap
+        // the session writer for the duration of the callback.
+        let mut chain = if !parsed.pipes.is_empty() {
+            Some(
+                build_output_chain(
+                    &parsed.pipes,
+                    &self.pipe_registry,
+                    self.session.use_pager(),
+                )
+                .map_err(|e| {
+                    Error::Callback(format!("pipe setup failed: {}", e))
+                })?,
+            )
+        } else {
+            None
+        };
+
+        if let Some(ref mut c) = chain {
+            self.session.set_writer(c.take_writer());
+        }
 
         // Process command.
         let mut exit = false;
@@ -83,6 +122,10 @@ impl Cli {
                 }
             }
         }
+
+        // Restore session writer to stdout and let the chain drain.
+        self.session.set_writer(Box::new(std::io::stdout()));
+        drop(chain);
 
         Ok(exit)
     }

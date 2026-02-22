@@ -21,6 +21,42 @@ use crate::error::ParserError;
 use crate::parser::{self, ParsedCommand};
 use crate::token::{Commands, TokenKind};
 
+fn complete_pipe_commands(
+    cli: &Cli,
+    line: &str,
+    pos: usize,
+) -> Vec<Suggestion> {
+    // Find what the user has typed after the last " | ".
+    let after_pipe = line.rfind(" | ").map(|i| &line[i + 3..]).unwrap_or("");
+
+    let partial = !after_pipe.is_empty() && !after_pipe.ends_with(' ');
+    let partial_word = if partial {
+        after_pipe.split_whitespace().last().unwrap_or("")
+    } else {
+        ""
+    };
+
+    cli.pipe_registry
+        .names()
+        .filter(|name| name.starts_with(partial_word))
+        .map(|name| Suggestion {
+            value: name.to_owned(),
+            description: None,
+            extra: None,
+            span: Span {
+                start: if partial {
+                    pos - partial_word.len()
+                } else {
+                    pos
+                },
+                end: pos,
+            },
+            append_whitespace: true,
+            style: None,
+        })
+        .collect()
+}
+
 static DEFAULT_PROMPT_INDICATOR: &str = "# ";
 static DEFAULT_MULTILINE_INDICATOR: &str = "::: ";
 static DEFAULT_HISTORY_SIZE: usize = 1000;
@@ -84,6 +120,12 @@ impl Prompt for CliPrompt {
 impl Completer for CliCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let cli = self.0.lock().unwrap();
+
+        // When the line contains " | ", complete pipe command names against
+        // the token after the last pipe separator.
+        if line.contains(" | ") {
+            return complete_pipe_commands(&cli, line, pos);
+        }
 
         let last_word = line.split_whitespace().last().unwrap_or(line);
         let partial = line
