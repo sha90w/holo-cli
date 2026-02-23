@@ -224,9 +224,8 @@ fn complete_pipe(
     after_pipe: &str,
     pos: usize,
 ) -> Vec<Suggestion> {
-    let mut words = after_pipe.split_whitespace();
-    let first_word = words.next().unwrap_or("");
-    let has_more_words = words.next().is_some();
+    let words: Vec<&str> = after_pipe.split_whitespace().collect();
+    let first_word = words.first().copied().unwrap_or("");
 
     // Check if cursor is at a partial word or after whitespace.
     let partial = after_pipe
@@ -239,13 +238,21 @@ fn complete_pipe(
         .commands()
         .iter()
         .any(|cmd| cmd.name == first_word);
-    if has_more_words || (partial && exact_match) {
-        // Pipe command already matched — show arg names.
+
+    if exact_match && (words.len() > 1 || !partial) {
+        // Command is fully entered — show arg hints if needed.
         if let Ok(idx) = registry.find(first_word) {
             let cmd = &registry.commands()[idx];
-            if !partial {
-                return cmd
-                    .args
+            // Count args already provided (excluding the command
+            // word and any partial word being typed).
+            let provided = if partial {
+                words.len() - 2
+            } else {
+                words.len() - 1
+            };
+            // Show remaining arg hints if not typing a value.
+            if !partial && provided < cmd.args.len() {
+                return cmd.args[provided..]
                     .iter()
                     .map(|arg| Suggestion {
                         value: arg.to_uppercase(),
@@ -265,12 +272,15 @@ fn complete_pipe(
     }
 
     // Complete pipe command names.
-    let completions: Vec<_> = registry
+    registry
         .commands()
         .iter()
-        .filter(|cmd| first_word.is_empty() || cmd.name.starts_with(first_word))
+        .filter(|cmd| {
+            first_word.is_empty() || cmd.name.starts_with(first_word)
+        })
         .map(|cmd| {
-            let span_start = if partial { pos - first_word.len() } else { pos };
+            let span_start =
+                if partial { pos - first_word.len() } else { pos };
             Suggestion {
                 value: cmd.name.to_owned(),
                 description: Some(cmd.help.to_owned()),
@@ -283,9 +293,7 @@ fn complete_pipe(
                 style: None,
             }
         })
-        .collect();
-
-    completions
+        .collect()
 }
 
 fn complete_add_token(

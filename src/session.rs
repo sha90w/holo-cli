@@ -114,10 +114,6 @@ impl Session {
         self.writer.as_mut().unwrap().as_mut()
     }
 
-    pub fn take_writer(&mut self) -> Option<Box<dyn std::io::Write + Send>> {
-        self.writer.take()
-    }
-
     fn update_prompt(&mut self) {
         self.prompt = match &self.mode {
             CommandMode::Operational => self.hostname.clone(),

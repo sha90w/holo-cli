@@ -378,12 +378,8 @@ impl PipeChain {
 
             match &cmd.action {
                 PipeAction::External { binary } => {
-                    let mut all_args: Vec<&str> = cmd.args.to_vec();
-                    for arg in &parsed.args {
-                        all_args.push(arg.as_str());
-                    }
                     let mut child = Command::new(binary)
-                        .args(&all_args)
+                        .args(&parsed.args)
                         .stdin(Stdio::piped())
                         .stdout(next_output.into_stdio())
                         .spawn()
