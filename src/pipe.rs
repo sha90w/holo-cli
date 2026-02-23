@@ -148,8 +148,14 @@ impl PipeRegistry {
         let mut words = segment.split_whitespace();
         let name = words.next().unwrap_or("");
         let idx = self.find(name)?;
-        let args: Vec<String> = words.map(|w| w.to_owned()).collect();
+        let words: Vec<String> = words.map(|w| w.to_owned()).collect();
         let expected = self.commands[idx].args.len();
+        let args = if expected == 1 && words.len() > 1 {
+            // Join all remaining words into a single argument.
+            vec![words.join(" ")]
+        } else {
+            words
+        };
         if args.len() != expected {
             return Err(PipeError::WrongArgCount {
                 command: self.commands[idx].name.to_owned(),
@@ -292,6 +298,13 @@ pub fn default_registry() -> PipeRegistry {
         )
         .builtin("count", "Count output lines", &[], filter_count)
         .builtin("no-more", "Disable pager", &[], filter_no_more)
+        .external(
+            "grep",
+            "Filter lines using grep",
+            &["PATTERN"],
+            "grep",
+            &[],
+        )
         .build()
 }
 
