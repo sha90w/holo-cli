@@ -141,10 +141,14 @@ impl PipeRegistry {
     }
 
     pub fn parse_pipe(&self, segment: &str) -> Result<ParsedPipe, PipeError> {
-        let mut words = segment.split_whitespace();
-        let name = words.next().unwrap_or("");
-        let idx = self.find(name)?;
-        let args: Vec<String> = words.map(|w| w.to_owned()).collect();
+        let mut words = split_words(segment);
+        let name = if words.is_empty() {
+            String::new()
+        } else {
+            words.remove(0)
+        };
+        let idx = self.find(&name)?;
+        let args = words;
         let cmd = &self.commands[idx];
         let expected = cmd.args.len();
         if matches!(cmd.action, PipeAction::External { .. }) {
@@ -478,14 +482,55 @@ impl PipeChain {
 
 // ===== helper functions =====
 
-pub fn split_on_pipes(line: &str) -> (&str, Vec<&str>) {
-    let mut parts = line.splitn(2, '|');
-    let base = parts.next().unwrap_or("").trim();
-    match parts.next() {
-        Some(rest) => {
-            let pipes: Vec<&str> = rest.split('|').map(|s| s.trim()).collect();
-            (base, pipes)
+/// Split a string on a delimiter, respecting double-quoted segments.
+/// Quotes are preserved in the output slices.
+fn split_unquoted(s: &str, delim: char) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let mut start = 0;
+    let mut in_quote = false;
+    for (i, c) in s.char_indices() {
+        if c == '"' {
+            in_quote = !in_quote;
+        } else if c == delim && !in_quote {
+            parts.push(&s[start..i]);
+            start = i + c.len_utf8();
         }
-        None => (base, vec![]),
+    }
+    parts.push(&s[start..]);
+    parts
+}
+
+/// Split words on whitespace, respecting double-quoted segments.
+/// Quotes are stripped from the returned strings.
+fn split_words(s: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+    for c in s.chars() {
+        if c == '"' {
+            in_quote = !in_quote;
+        } else if c.is_whitespace() && !in_quote {
+            if !current.is_empty() {
+                words.push(std::mem::take(&mut current));
+            }
+        } else {
+            current.push(c);
+        }
+    }
+    if !current.is_empty() {
+        words.push(current);
+    }
+    words
+}
+
+pub fn split_on_pipes(line: &str) -> (&str, Vec<&str>) {
+    let parts = split_unquoted(line, '|');
+    let base = parts[0].trim();
+    if parts.len() > 1 {
+        let pipes: Vec<&str> =
+            parts[1..].iter().map(|s| s.trim()).collect();
+        (base, pipes)
+    } else {
+        (base, vec![])
     }
 }
