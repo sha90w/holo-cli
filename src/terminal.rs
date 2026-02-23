@@ -235,7 +235,11 @@ fn complete_pipe(
         .map(|c| !c.is_whitespace())
         .unwrap_or(false);
 
-    if has_more_words || (partial && registry.find(first_word).is_ok()) {
+    let exact_match = registry
+        .commands()
+        .iter()
+        .any(|cmd| cmd.name == first_word);
+    if has_more_words || (partial && exact_match) {
         // Pipe command already matched — show arg names.
         if let Ok(idx) = registry.find(first_word) {
             let cmd = &registry.commands()[idx];
