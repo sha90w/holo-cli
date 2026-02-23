@@ -93,11 +93,12 @@ impl PipeRegistry {
         name: &'static str,
         help: &'static str,
         binary: &'static str,
+        args: &'static [&'static str],
     ) -> Self {
         self.commands.push(PipeCommand {
             name,
             help,
-            args: &[],
+            args,
             action: PipeAction::External { binary },
         });
         self
@@ -145,16 +146,22 @@ impl PipeRegistry {
         let idx = self.find(name)?;
         let args: Vec<String> = words.map(|w| w.to_owned()).collect();
         let cmd = &self.commands[idx];
-        // External commands handle their own argument validation.
-        if !matches!(cmd.action, PipeAction::External { .. }) {
-            let expected = cmd.args.len();
-            if args.len() != expected {
+        let expected = cmd.args.len();
+        if matches!(cmd.action, PipeAction::External { .. }) {
+            // External: args specifies minimum required arguments.
+            if args.len() < expected {
                 return Err(PipeError::WrongArgCount {
                     command: cmd.name.to_owned(),
                     expected,
                     got: args.len(),
                 });
             }
+        } else if args.len() != expected {
+            return Err(PipeError::WrongArgCount {
+                command: cmd.name.to_owned(),
+                expected,
+                got: args.len(),
+            });
         }
         Ok(ParsedPipe {
             command_idx: idx,
@@ -291,7 +298,7 @@ pub fn default_registry() -> PipeRegistry {
         )
         .builtin("count", "Count output lines", &[], filter_count)
         .builtin("no-more", "Disable pager", &[], filter_no_more)
-        .external("grep", "Filter lines using grep", "grep")
+        .external("grep", "Filter lines using grep", "grep", &["PATTERN"])
         .build()
 }
 
