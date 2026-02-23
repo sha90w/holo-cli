@@ -20,10 +20,7 @@ type BuiltinFn = fn(
 // ===== data types =====
 
 pub enum PipeAction {
-    External {
-        binary: &'static str,
-        fixed_args: &'static [&'static str],
-    },
+    External { binary: &'static str },
     Builtin(BuiltinFn),
 }
 
@@ -95,15 +92,13 @@ impl PipeRegistry {
         mut self,
         name: &'static str,
         help: &'static str,
-        args: &'static [&'static str],
         binary: &'static str,
-        fixed_args: &'static [&'static str],
     ) -> Self {
         self.commands.push(PipeCommand {
             name,
             help,
-            args,
-            action: PipeAction::External { binary, fixed_args },
+            args: &[],
+            action: PipeAction::External { binary },
         });
         self
     }
@@ -148,20 +143,18 @@ impl PipeRegistry {
         let mut words = segment.split_whitespace();
         let name = words.next().unwrap_or("");
         let idx = self.find(name)?;
-        let words: Vec<String> = words.map(|w| w.to_owned()).collect();
-        let expected = self.commands[idx].args.len();
-        let args = if expected == 1 && words.len() > 1 {
-            // Join all remaining words into a single argument.
-            vec![words.join(" ")]
-        } else {
-            words
-        };
-        if args.len() != expected {
-            return Err(PipeError::WrongArgCount {
-                command: self.commands[idx].name.to_owned(),
-                expected,
-                got: args.len(),
-            });
+        let args: Vec<String> = words.map(|w| w.to_owned()).collect();
+        let cmd = &self.commands[idx];
+        // External commands handle their own argument validation.
+        if !matches!(cmd.action, PipeAction::External { .. }) {
+            let expected = cmd.args.len();
+            if args.len() != expected {
+                return Err(PipeError::WrongArgCount {
+                    command: cmd.name.to_owned(),
+                    expected,
+                    got: args.len(),
+                });
+            }
         }
         Ok(ParsedPipe {
             command_idx: idx,
@@ -298,13 +291,7 @@ pub fn default_registry() -> PipeRegistry {
         )
         .builtin("count", "Count output lines", &[], filter_count)
         .builtin("no-more", "Disable pager", &[], filter_no_more)
-        .external(
-            "grep",
-            "Filter lines using grep",
-            &["PATTERN"],
-            "grep",
-            &[],
-        )
+        .external("grep", "Filter lines using grep", "grep")
         .build()
 }
 
@@ -383,8 +370,8 @@ impl PipeChain {
             }
 
             match &cmd.action {
-                PipeAction::External { binary, fixed_args } => {
-                    let mut all_args: Vec<&str> = fixed_args.to_vec();
+                PipeAction::External { binary } => {
+                    let mut all_args: Vec<&str> = cmd.args.to_vec();
                     for arg in &parsed.args {
                         all_args.push(arg.as_str());
                     }
