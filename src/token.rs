@@ -8,6 +8,7 @@ use indextree::{Arena, NodeId};
 use yang4::schema::SchemaNode;
 
 use crate::parser::ParsedArgs;
+use crate::pipe::PipeRegistry;
 use crate::session::Session;
 use crate::{token_xml, token_yang};
 
@@ -17,6 +18,7 @@ pub struct Commands {
     pub config_root_yang: NodeId,
     pub config_root_internal: NodeId,
     pub config_dflt_internal: NodeId,
+    pub pipe_registry: PipeRegistry,
 }
 
 pub struct Token {
@@ -26,6 +28,7 @@ pub struct Token {
     pub argument: Option<String>,
     pub action: Option<Action>,
     pub node_update: bool,
+    pub pipeable: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -61,6 +64,7 @@ impl Commands {
             config_root_yang,
             config_root_internal,
             config_dflt_internal,
+            pipe_registry: crate::pipe::default_registry(),
         }
     }
 
@@ -94,6 +98,7 @@ impl Token {
         argument: Option<S>,
         action: Option<Action>,
         node_update: bool,
+        pipeable: bool,
     ) -> Token {
         Token {
             name: name.into(),
@@ -102,6 +107,7 @@ impl Token {
             argument: argument.map(|s| s.into()),
             action,
             node_update,
+            pipeable,
         }
     }
 

@@ -5,7 +5,7 @@
     <token name="exit" help="Exit the management session." cmd="cmd_exit_exec"/>
     <token name="end" help="Terminate configuration session." cmd="cmd_end"/>
     <token name="list" help="Print command list." cmd="cmd_list"/>
-    <token name="show" help="Show information about the system.">
+    <token name="show" help="Show information about the system." pipe="true">
       <token name="running" argument="configuration" help="Show running configuration." cmd="cmd_show_config">
         <token name="format" help="Configuration format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">

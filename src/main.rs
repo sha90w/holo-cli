@@ -8,6 +8,7 @@ mod error;
 mod grpc;
 mod internal_commands;
 mod parser;
+mod pipe;
 mod session;
 mod terminal;
 mod token;
@@ -58,28 +59,96 @@ impl Cli {
             None => return Ok(false),
         };
 
-        // Parse command.
+        // Split on pipe characters.
+        let (base_line, pipe_segments) = pipe::split_on_pipes(&line);
+
+        // Parse pipe commands (validated early for fast error
+        // reporting).
+        let parsed_pipes = self
+            .commands
+            .pipe_registry
+            .parse_pipes(&pipe_segments)
+            .map_err(Error::Pipe)?;
+
+        // Parse base command.
         let pcmd =
-            parser::parse_command(&mut self.session, &self.commands, &line)
+            parser::parse_command(&mut self.session, &self.commands, base_line)
                 .map_err(Error::Parser)?;
         let token = self.commands.get_token(pcmd.token_id);
         let negate = pcmd.negate;
         let args = pcmd.args;
+
+        // Validate pipes are allowed for this command.
+        if !parsed_pipes.is_empty() && !token.pipeable {
+            return Err(Error::Pipe(pipe::PipeError::NotAllowed));
+        }
 
         // Process command.
         let mut exit = false;
         if let Some(action) = &token.action {
             match action {
                 Action::ConfigEdit(snode) => {
-                    // Edit configuration & update CLI node if necessary.
+                    // Edit configuration & update CLI node if
+                    // necessary.
                     self.session
                         .edit_candidate(negate, snode, args)
                         .map_err(Error::EditConfig)?;
                 }
                 Action::Callback(callback) => {
-                    // Execute callback.
-                    exit = (callback)(&self.commands, &mut self.session, args)
+                    // Set up output: pipe chain, pager, or
+                    // stdout.
+                    let pipe_chain = if !parsed_pipes.is_empty() {
+                        let mut chain = pipe::PipeChain::spawn(
+                            &self.commands.pipe_registry,
+                            &parsed_pipes,
+                            self.session.use_pager(),
+                        )
                         .map_err(Error::Callback)?;
+                        let writer = chain.take_writer();
+                        self.session.set_writer(writer);
+                        Some(chain)
+                    } else if self.session.use_pager() {
+                        // Set up pager as the writer.
+                        match pipe::spawn_pager() {
+                            Ok(mut pager) => {
+                                let stdin = pager.stdin.take();
+                                self.session.set_writer(stdin.map(|s| {
+                                    Box::new(s)
+                                        as Box<dyn std::io::Write + Send>
+                                }));
+                                Some(pipe::PipeChain::from_pager(pager))
+                            }
+                            Err(_) => None,
+                        }
+                    } else {
+                        None
+                    };
+
+                    // Execute callback.
+                    let result =
+                        (callback)(&self.commands, &mut self.session, args);
+
+                    // Clean up: reset writer and finish pipe
+                    // chain / pager.
+                    self.session.set_writer(None);
+                    if let Some(chain) = pipe_chain {
+                        let _ = chain.finish();
+                    }
+
+                    // Handle callback result, treating
+                    // BrokenPipe as non-fatal.
+                    match result {
+                        Ok(should_exit) => exit = should_exit,
+                        Err(msg)
+                            if msg.contains("Broken pipe")
+                                || msg.contains("broken pipe") =>
+                        {
+                            // Pipe closed early — not an error.
+                        }
+                        Err(msg) => {
+                            return Err(Error::Callback(msg));
+                        }
+                    }
                 }
             }
         }

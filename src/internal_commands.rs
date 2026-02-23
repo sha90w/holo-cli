@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write;
-use std::process::{Child, Command, Stdio};
 
 use chrono::prelude::*;
 use indextree::NodeId;
@@ -222,9 +221,12 @@ impl<'a> YangTableBuilder<'a> {
         let values = Vec::new();
         Self::show_path(&mut table, dnode, &self.paths, values);
 
-        // Print the table to stdout.
-        if let Err(error) = page_table(self.session, &table) {
-            println!("% failed to display data: {}", error);
+        // Print the table.
+        if !table.is_empty() {
+            let writer = self.session.writer();
+            table.print(writer).map_err(|e| e.to_string())?;
+            std::io::Write::write_all(writer, b"\n")
+                .map_err(|e| e.to_string())?;
         }
 
         Ok(())
@@ -246,63 +248,11 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
     None
 }
 
-fn pager() -> Result<Child, std::io::Error> {
-    Command::new("less")
-        // Exit immediately if the data fits on one screen.
-        .arg("-F")
-        // Do not clear the screen on exit.
-        .arg("-X")
-        .stdin(Stdio::piped())
-        .spawn()
-}
-
-fn page_output(session: &Session, data: &str) -> Result<(), std::io::Error> {
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(data.as_bytes())?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the data directly to the console.
-        println!("{}", data);
-    }
-
-    Ok(())
-}
-
-fn page_table(session: &Session, table: &Table) -> Result<(), std::io::Error> {
-    if table.is_empty() {
-        return Ok(());
-    }
-
-    if session.use_pager() {
-        use std::io::Write;
-
-        // Spawn the pager process.
-        let mut pager = pager()?;
-
-        // Print the table.
-        let mut output = Vec::new();
-        table.print(&mut output)?;
-        writeln!(output)?;
-
-        // Feed the data to the pager.
-        pager.stdin.as_mut().unwrap().write_all(&output)?;
-
-        // Wait for the pager process to finish.
-        pager.wait()?;
-    } else {
-        // Print the table directly to the console.
-        table.printstd();
-        println!();
-    }
-
+fn write_output(session: &mut Session, data: &str) -> Result<(), String> {
+    std::io::Write::write_all(session.writer(), data.as_bytes())
+        .map_err(|e| e.to_string())?;
+    std::io::Write::write_all(session.writer(), b"\n")
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -646,9 +596,7 @@ pub fn cmd_show_config(
         Some(_) => panic!("unknown format"),
         None => cmd_show_config_cmds(config, with_defaults),
     };
-    if let Err(error) = page_output(session, &data) {
-        println!("% failed to print configuration: {}", error)
-    }
+    write_output(session, &data)?;
 
     Ok(false)
 }
@@ -693,9 +641,7 @@ pub fn cmd_show_state(
     match session.get(proto::get_request::DataType::State, format, false, xpath)
     {
         Ok(proto::data_tree::Data::DataString(data)) => {
-            if let Err(error) = page_output(session, &data) {
-                println!("% failed to print state data: {}", error)
-            }
+            write_output(session, &data)?;
         }
         Ok(proto::data_tree::Data::DataBytes(_)) => unreachable!(),
         Err(error) => println!("% failed to fetch state data: {}", error),
@@ -1009,9 +955,7 @@ pub fn cmd_show_ospf_interface_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1190,9 +1134,7 @@ pub fn cmd_show_ospf_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1511,9 +1453,7 @@ pub fn cmd_show_rip_interface_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1603,9 +1543,7 @@ pub fn cmd_show_rip_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1766,9 +1704,7 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1943,9 +1879,7 @@ pub fn cmd_show_mpls_ldp_peer_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -2230,9 +2164,7 @@ pub fn cmd_show_bgp_neighbor(
         writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -2469,9 +2401,7 @@ pub fn cmd_show_bgp_neighbor_detail(
         }
     }
 
-    if let Err(error) = page_output(session, &output) {
-        println!("% failed to print data: {}", error)
-    }
+    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -2657,8 +2587,7 @@ pub fn cmd_show_route(
     }
 
     if !output.is_empty() {
-        page_output(session, &output)
-            .map_err(|e| format!("% failed to display data: {}", e))?;
+        write_output(session, &output)?;
     }
 
     Ok(false)

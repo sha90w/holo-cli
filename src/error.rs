@@ -6,6 +6,8 @@
 
 use indextree::NodeId;
 
+use crate::pipe::PipeError;
+
 #[derive(Debug)]
 pub enum Error {
     Parser(ParserError),
@@ -13,6 +15,7 @@ pub enum Error {
     ValidateConfig(yang4::Error),
     Callback(String),
     Backend(tonic::Status),
+    Pipe(PipeError),
 }
 
 #[derive(Debug)]
@@ -38,6 +41,9 @@ impl std::fmt::Display for Error {
                 write!(f, "failed to execute command: {}", error)
             }
             Error::Backend(error) => {
+                write!(f, "{}", error)
+            }
+            Error::Pipe(error) => {
                 write!(f, "{}", error)
             }
         }

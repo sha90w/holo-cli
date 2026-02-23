@@ -19,6 +19,7 @@ use reedline::{
 use crate::Cli;
 use crate::error::ParserError;
 use crate::parser::{self, ParsedCommand};
+use crate::pipe::PipeRegistry;
 use crate::token::{Commands, TokenKind};
 
 static DEFAULT_PROMPT_INDICATOR: &str = "# ";
@@ -84,6 +85,32 @@ impl Prompt for CliPrompt {
 impl Completer for CliCompleter {
     fn complete(&mut self, line: &str, pos: usize) -> Vec<Suggestion> {
         let cli = self.0.lock().unwrap();
+
+        // Check if we're completing after a pipe character.
+        let line_to_pos = &line[..pos];
+        if let Some(pipe_pos) = line_to_pos.rfind('|') {
+            // Parse the base command (before the first pipe) to
+            // check if it supports pipes.
+            let base_cmd = line_to_pos.split('|').next().unwrap_or("").trim();
+            let wd = cli.session.mode().token(&cli.commands);
+            let pipeable = match parser::parse_command_try(
+                &cli.session,
+                &cli.commands,
+                wd,
+                base_cmd,
+            ) {
+                Ok(parsed) => cli.commands.get_token(parsed.token_id).pipeable,
+                Err(ParserError::Incomplete(tid)) => {
+                    cli.commands.get_token(tid).pipeable
+                }
+                _ => false,
+            };
+            if !pipeable {
+                return vec![];
+            }
+            let after_pipe = line_to_pos[pipe_pos + 1..].trim_start();
+            return complete_pipe(&cli.commands.pipe_registry, after_pipe, pos);
+        }
 
         let last_word = line.split_whitespace().last().unwrap_or(line);
         let partial = line
@@ -190,6 +217,71 @@ pub fn reedline_init(
         .with_partial_completions(true)
         .with_edit_mode(edit_mode)
         .with_menu(ReedlineMenu::EngineCompleter(completion_menu))
+}
+
+fn complete_pipe(
+    registry: &PipeRegistry,
+    after_pipe: &str,
+    pos: usize,
+) -> Vec<Suggestion> {
+    let mut words = after_pipe.split_whitespace();
+    let first_word = words.next().unwrap_or("");
+    let has_more_words = words.next().is_some();
+
+    // Check if cursor is at a partial word or after whitespace.
+    let partial = after_pipe
+        .chars()
+        .last()
+        .map(|c| !c.is_whitespace())
+        .unwrap_or(false);
+
+    if has_more_words || (partial && registry.find(first_word).is_ok()) {
+        // Pipe command already matched — show arg names.
+        if let Ok(idx) = registry.find(first_word) {
+            let cmd = &registry.commands()[idx];
+            if !partial {
+                return cmd
+                    .args
+                    .iter()
+                    .map(|arg| Suggestion {
+                        value: arg.to_uppercase(),
+                        description: Some(cmd.help.to_owned()),
+                        extra: None,
+                        span: Span {
+                            start: pos,
+                            end: pos,
+                        },
+                        append_whitespace: true,
+                        style: None,
+                    })
+                    .collect();
+            }
+        }
+        return vec![];
+    }
+
+    // Complete pipe command names.
+    let completions: Vec<_> = registry
+        .commands()
+        .iter()
+        .filter(|cmd| first_word.is_empty() || cmd.name.starts_with(first_word))
+        .map(|cmd| {
+            let span_start = if partial { pos - first_word.len() } else { pos };
+            Suggestion {
+                value: cmd.name.to_owned(),
+                description: Some(cmd.help.to_owned()),
+                extra: None,
+                span: Span {
+                    start: span_start,
+                    end: pos,
+                },
+                append_whitespace: true,
+                style: None,
+            }
+        })
+        .collect();
+
+    completions
 }
 
 fn complete_add_token(

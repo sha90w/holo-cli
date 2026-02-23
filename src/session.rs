@@ -20,7 +20,6 @@ use crate::{YANG_CTX, token_yang};
 
 static DEFAULT_HOSTNAME: &str = "holo";
 
-#[derive(Debug)]
 pub struct Session {
     hostname: String,
     prompt: String,
@@ -29,6 +28,7 @@ pub struct Session {
     running: DataTree<'static>,
     candidate: Option<DataTree<'static>>,
     grpc_client: GrpcClient,
+    writer: Option<Box<dyn std::io::Write + Send>>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, EnumAsInner)]
@@ -81,6 +81,7 @@ impl Session {
             running,
             candidate: None,
             grpc_client,
+            writer: None,
         }
     }
 
@@ -100,6 +101,21 @@ impl Session {
 
     pub fn use_pager(&self) -> bool {
         self.use_pager
+    }
+
+    pub fn set_writer(&mut self, w: Option<Box<dyn std::io::Write + Send>>) {
+        self.writer = w;
+    }
+
+    pub fn writer(&mut self) -> &mut dyn std::io::Write {
+        if self.writer.is_none() {
+            self.writer = Some(Box::new(std::io::stdout()));
+        }
+        self.writer.as_mut().unwrap().as_mut()
+    }
+
+    pub fn take_writer(&mut self) -> Option<Box<dyn std::io::Write + Send>> {
+        self.writer.take()
     }
 
     fn update_prompt(&mut self) {
