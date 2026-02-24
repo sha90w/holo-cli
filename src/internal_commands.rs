@@ -5,7 +5,8 @@
 //
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
+use std::fmt::Write as _;
+use std::io::Write;
 
 use chrono::prelude::*;
 use indextree::NodeId;
@@ -362,23 +363,27 @@ pub fn cmd_list(
     match session.mode() {
         CommandMode::Operational => {
             // List EXEC-level commands.
-            cmd_list_root(commands, &commands.exec_root);
+            cmd_list_root(commands, session, &commands.exec_root);
         }
         CommandMode::Configure { .. } => {
             // List internal configuration commands first.
-            cmd_list_root(commands, &commands.config_dflt_internal);
-            println!("---");
-            cmd_list_root(commands, &commands.config_root_internal);
-            println!("---");
+            cmd_list_root(commands, session, &commands.config_dflt_internal);
+            writeln!(session.writer(), "---").unwrap();
+            cmd_list_root(commands, session, &commands.config_root_internal);
+            writeln!(session.writer(), "---").unwrap();
             // List YANG configuration commands.
-            cmd_list_root(commands, &session.mode().token(commands));
+            cmd_list_root(commands, session, &session.mode().token(commands));
         }
     }
 
     Ok(false)
 }
 
-pub fn cmd_list_root(commands: &Commands, top_token_id: &NodeId) {
+pub fn cmd_list_root(
+    commands: &Commands,
+    session: &mut Session,
+    top_token_id: &NodeId,
+) {
     for token_id in
         top_token_id
             .descendants(&commands.arena)
@@ -404,7 +409,7 @@ pub fn cmd_list_root(commands: &Commands, top_token_id: &NodeId) {
             cmd_string.push(' ');
         }
 
-        println!("{}", cmd_string);
+        writeln!(session.writer(), "{}", cmd_string).unwrap();
     }
 }
 
