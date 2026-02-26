@@ -6,7 +6,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::io::Write;
+use std::io::prelude::*;
 
 use chrono::prelude::*;
 use indextree::NodeId;
@@ -225,9 +225,8 @@ impl<'a> YangTableBuilder<'a> {
         // Print the table.
         if !table.is_empty() {
             let writer = self.session.writer();
-            table.print(writer).map_err(|e| e.to_string())?;
-            std::io::Write::write_all(writer, b"\n")
-                .map_err(|e| e.to_string())?;
+            table.print(writer).unwrap();
+            writeln!(writer).unwrap();
         }
 
         Ok(())
@@ -250,10 +249,9 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
 }
 
 fn write_output(session: &mut Session, data: &str) -> Result<(), String> {
-    std::io::Write::write_all(session.writer(), data.as_bytes())
-        .map_err(|e| e.to_string())?;
-    std::io::Write::write_all(session.writer(), b"\n")
-        .map_err(|e| e.to_string())?;
+    let w = session.writer();
+    w.write_all(data.as_bytes()).unwrap();
+    writeln!(w).unwrap();
     Ok(())
 }
 
@@ -898,8 +896,6 @@ pub fn cmd_show_ospf_interface_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -931,6 +927,7 @@ pub fn cmd_show_ospf_interface_detail(
             let area = dnode.child_value("area-id");
 
             // Iterate over OSPF interfaces.
+            let output = session.writer();
             for dnode in dnode.find_xpath(&xpath_iface).unwrap() {
                 writeln!(output, "{}", dnode.child_value("name")).unwrap();
                 writeln!(output, " instance: {}", instance).unwrap();
@@ -959,8 +956,6 @@ pub fn cmd_show_ospf_interface_detail(
             }
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
