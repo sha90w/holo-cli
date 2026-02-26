@@ -6,7 +6,6 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
-use std::io::prelude::*;
 
 use chrono::prelude::*;
 use indextree::NodeId;
@@ -225,8 +224,8 @@ impl<'a> YangTableBuilder<'a> {
         // Print the table.
         if !table.is_empty() {
             let writer = self.session.writer();
-            table.print(writer).unwrap();
-            writeln!(writer).unwrap();
+            table.print(writer).map_err(|e| e.to_string())?;
+            writeln!(writer).map_err(|e| e.to_string())?;
         }
 
         Ok(())
@@ -250,8 +249,8 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
 
 fn write_output(session: &mut Session, data: &str) -> Result<(), String> {
     let w = session.writer();
-    w.write_all(data.as_bytes()).unwrap();
-    writeln!(w).unwrap();
+    w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
+    writeln!(w).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -366,9 +365,9 @@ pub fn cmd_list(
         CommandMode::Configure { .. } => {
             // List internal configuration commands first.
             cmd_list_root(commands, session, &commands.config_dflt_internal);
-            writeln!(session.writer(), "---").unwrap();
+            writeln!(session.writer(), "---").map_err(|e| e.to_string())?;
             cmd_list_root(commands, session, &commands.config_root_internal);
-            writeln!(session.writer(), "---").unwrap();
+            writeln!(session.writer(), "---").map_err(|e| e.to_string())?;
             // List YANG configuration commands.
             cmd_list_root(commands, session, &session.mode().token(commands));
         }
@@ -1052,8 +1051,6 @@ pub fn cmd_show_ospf_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -1079,6 +1076,7 @@ pub fn cmd_show_ospf_neighbor_detail(
         fetch_data(session, proto::get_request::DataType::All, xpath_req)?;
 
     // Iterate over OSPF instances.
+    let output = session.writer();
     for dnode in data.find_xpath(&xpath_instance).unwrap() {
         let instance = dnode.child_value("name");
 
@@ -1133,8 +1131,6 @@ pub fn cmd_show_ospf_neighbor_detail(
             }
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1392,8 +1388,6 @@ pub fn cmd_show_rip_interface_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ripv2" => PROTOCOL_RIPV2,
@@ -1421,6 +1415,7 @@ pub fn cmd_show_rip_interface_detail(
         fetch_data(session, proto::get_request::DataType::State, xpath_req)?;
 
     // Iterate over RIP instances.
+    let output = session.writer();
     for dnode in data.find_xpath(&xpath_instance).unwrap() {
         let instance = dnode.child_value("name");
 
@@ -1452,8 +1447,6 @@ pub fn cmd_show_rip_interface_detail(
             writeln!(output).unwrap();
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1491,8 +1484,6 @@ pub fn cmd_show_rip_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let (protocol, afi, address) = match get_arg(&mut args, "protocol").as_str()
     {
@@ -1521,6 +1512,7 @@ pub fn cmd_show_rip_neighbor_detail(
         fetch_data(session, proto::get_request::DataType::State, xpath_req)?;
 
     // Iterate over RIP instances.
+    let output = session.writer();
     for dnode in data.find_xpath(&xpath_instance).unwrap() {
         let instance = dnode.child_value("name");
 
@@ -1542,8 +1534,6 @@ pub fn cmd_show_rip_neighbor_detail(
             writeln!(output).unwrap();
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -1622,8 +1612,6 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let name = get_opt_arg(&mut args, "name");
 
@@ -1647,6 +1635,7 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
         fetch_data(session, proto::get_request::DataType::State, xpath_req)?;
 
     // Iterate over MPLS LDP instances.
+    let output = session.writer();
     for dnode in data.find_xpath(&xpath_instance).unwrap() {
         let instance = dnode.child_value("name");
 
@@ -1704,8 +1693,6 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
         }
     }
 
-    write_output(session, &output)?;
-
     Ok(false)
 }
 
@@ -1736,8 +1723,6 @@ pub fn cmd_show_mpls_ldp_peer_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
-
     // Parse arguments.
     let lsr_id = get_opt_arg(&mut args, "lsr-id");
 
@@ -1761,6 +1746,7 @@ pub fn cmd_show_mpls_ldp_peer_detail(
         fetch_data(session, proto::get_request::DataType::State, xpath_req)?;
 
     // Iterate over MPLS LDP instances.
+    let output = session.writer();
     for dnode in data.find_xpath(&xpath_instance).unwrap() {
         let instance = dnode.child_value("name");
 
@@ -1878,8 +1864,6 @@ pub fn cmd_show_mpls_ldp_peer_detail(
             writeln!(output).unwrap();
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -2115,8 +2099,6 @@ pub fn cmd_show_bgp_neighbor(
 ) -> Result<bool, String> {
     let attrs = bgp_get_attrs(session).unwrap();
 
-    let mut output = String::new();
-
     let neighbor = get_arg(&mut args, "neighbor");
     let rt_type = get_arg(&mut args, "type");
     let afi = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
@@ -2150,6 +2132,8 @@ pub fn cmd_show_bgp_neighbor(
 
     let xpath_routes = format!("{}/route", &xpath_req);
 
+    let output = session.writer();
+
     writeln!(output, "\nAddress family: {afi}").unwrap();
     writeln!(
         output,
@@ -2163,8 +2147,6 @@ pub fn cmd_show_bgp_neighbor(
         let route_attrs = attrs.get(&index).unwrap();
         writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
@@ -2181,7 +2163,6 @@ pub fn cmd_show_bgp_neighbor_detail(
     session: &mut Session,
     mut args: ParsedArgs,
 ) -> Result<bool, String> {
-    let mut output = String::new();
     let neighbor_addr = get_opt_arg(&mut args, "neighbor");
 
     let xpath_bgp_instance = format!(
@@ -2201,6 +2182,7 @@ pub fn cmd_show_bgp_neighbor_detail(
         &xpath_bgp_instance,
     )?;
 
+    let output = session.writer();
     for dnode_inst in data.find_xpath(&xpath_bgp_instance).unwrap() {
         let local_as = dnode_inst.relative_value("ietf-bgp:bgp/global/as");
         let local_rid =
@@ -2400,8 +2382,6 @@ pub fn cmd_show_bgp_neighbor_detail(
             writeln!(output).unwrap();
         }
     }
-
-    write_output(session, &output)?;
 
     Ok(false)
 }
