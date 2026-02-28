@@ -2145,7 +2145,8 @@ pub fn cmd_show_bgp_neighbor(
         let prefix = route.child_opt_value("prefix").unwrap();
         let index = route.child_opt_value("attr-index").unwrap();
         let route_attrs = attrs.get(&index).unwrap();
-        writeln!(output, "{:>20} {}", prefix, route_attrs).unwrap();
+        writeln!(output, "{:>20} {}", prefix, route_attrs)
+            .map_err(|e| e.to_string())?;
     }
 
     Ok(false)
