@@ -359,11 +359,7 @@ impl PipeChain {
 
         // Determine the final output destination.
         let (mut next_output, pager) = if should_page {
-            let mut pager = Command::new("less")
-                .arg("-F")
-                .arg("-X")
-                .stdin(Stdio::piped())
-                .spawn()
+            let mut pager = spawn_pager()
                 .map_err(|e| format!("failed to spawn pager: {}", e))?;
             let stdin = pager.stdin.take().unwrap();
             (ChainOutput::PagerStdin(stdin), Some(pager))
@@ -527,8 +523,7 @@ pub fn split_on_pipes(line: &str) -> (&str, Vec<&str>) {
     let parts = split_unquoted(line, '|');
     let base = parts[0].trim();
     if parts.len() > 1 {
-        let pipes: Vec<&str> =
-            parts[1..].iter().map(|s| s.trim()).collect();
+        let pipes: Vec<&str> = parts[1..].iter().map(|s| s.trim()).collect();
         (base, pipes)
     } else {
         (base, vec![])
