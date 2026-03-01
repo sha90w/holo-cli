@@ -20,7 +20,7 @@ use crate::Cli;
 use crate::error::ParserError;
 use crate::parser::{self, ParsedCommand};
 use crate::pipe::PipeRegistry;
-use crate::token::{Commands, TokenKind};
+use crate::token::{Commands, TokenKind, is_pipeable};
 
 static DEFAULT_PROMPT_INDICATOR: &str = "# ";
 static DEFAULT_MULTILINE_INDICATOR: &str = "::: ";
@@ -101,7 +101,7 @@ impl Completer for CliCompleter {
             ) {
                 Ok(parsed) => cli.commands.get_token(parsed.token_id).pipeable,
                 Err(ParserError::Incomplete(tid)) => {
-                    cli.commands.get_token(tid).pipeable
+                    is_pipeable(&cli.commands, tid)
                 }
                 _ => false,
             };
@@ -234,10 +234,8 @@ fn complete_pipe(
         .map(|c| !c.is_whitespace())
         .unwrap_or(false);
 
-    let exact_match = registry
-        .commands()
-        .iter()
-        .any(|cmd| cmd.name == first_word);
+    let exact_match =
+        registry.commands().iter().any(|cmd| cmd.name == first_word);
 
     if exact_match && (words.len() > 1 || !partial) {
         // Command is fully entered — show arg hints if needed.
@@ -275,12 +273,9 @@ fn complete_pipe(
     registry
         .commands()
         .iter()
-        .filter(|cmd| {
-            first_word.is_empty() || cmd.name.starts_with(first_word)
-        })
+        .filter(|cmd| first_word.is_empty() || cmd.name.starts_with(first_word))
         .map(|cmd| {
-            let span_start =
-                if partial { pos - first_word.len() } else { pos };
+            let span_start = if partial { pos - first_word.len() } else { pos };
             Suggestion {
                 value: cmd.name.to_owned(),
                 description: Some(cmd.help.to_owned()),

@@ -25,7 +25,7 @@ use crate::error::Error;
 use crate::grpc::GrpcClient;
 use crate::session::{CommandMode, Session};
 use crate::terminal::CliPrompt;
-use crate::token::{Action, Commands};
+use crate::token::{Action, Commands, is_pipeable};
 
 // Global YANG context.
 pub static YANG_CTX: OnceLock<Arc<Context>> = OnceLock::new();
@@ -79,7 +79,9 @@ impl Cli {
         let args = pcmd.args;
 
         // Validate pipes are allowed for this command.
-        if !parsed_pipes.is_empty() && !token.pipeable {
+        if !parsed_pipes.is_empty()
+            && !is_pipeable(&self.commands, pcmd.token_id)
+        {
             return Err(Error::Pipe(pipe::PipeError::NotAllowed));
         }
 
