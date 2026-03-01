@@ -99,7 +99,7 @@ impl Completer for CliCompleter {
                 wd,
                 base_cmd,
             ) {
-                Ok(parsed) => cli.commands.get_token(parsed.token_id).pipeable,
+                Ok(parsed) => is_pipeable(&cli.commands, parsed.token_id),
                 Err(ParserError::Incomplete(tid)) => {
                     is_pipeable(&cli.commands, tid)
                 }
