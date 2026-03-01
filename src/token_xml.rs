@@ -69,7 +69,7 @@ fn parse_tag_token(
     let kind = find_opt_attribute(&attributes, "kind");
     let argument = find_opt_attribute(&attributes, "argument");
     let cmd_name = find_opt_attribute(&attributes, "cmd");
-    let pipeable = find_opt_attribute(&attributes, "pipeable") == Some("true");
+    let pipeable = find_opt_attribute(&attributes, "pipe") == Some("true");
     let callback = cmd_name.map(|name| match name {
         "cmd_config" => internal_commands::cmd_config,
         "cmd_list" => internal_commands::cmd_list,
