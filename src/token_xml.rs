@@ -18,24 +18,16 @@ pub fn gen_cmds(commands: &mut Commands) {
 
     // Iterate over all XML tags.
     let mut stack = vec![];
-    let mut pipeable_stack: Vec<bool> = vec![];
     for e in reader {
         match e {
             Ok(XmlEvent::StartElement {
                 name, attributes, ..
             }) => {
-                let (token_id, pipeable) = match name.local_name.as_str() {
-                    "tree" => (parse_tag_tree(commands, attributes), false),
+                let token_id = match name.local_name.as_str() {
+                    "tree" => parse_tag_tree(commands, attributes),
                     "token" => {
                         let parent = stack.last().unwrap();
-                        let parent_pipeable =
-                            pipeable_stack.last().copied().unwrap_or(false);
-                        parse_tag_token(
-                            commands,
-                            *parent,
-                            attributes,
-                            parent_pipeable,
-                        )
+                        parse_tag_token(commands, *parent, attributes)
                     }
                     // Ignore unknown tags for now.
                     _ => continue,
@@ -43,12 +35,10 @@ pub fn gen_cmds(commands: &mut Commands) {
 
                 // Update stacks.
                 stack.push(token_id);
-                pipeable_stack.push(pipeable);
             }
             Ok(XmlEvent::EndElement { .. }) => {
                 // Update stacks.
                 stack.pop();
-                pipeable_stack.pop();
             }
             Ok(_) => (),
             Err(e) => panic!("Error parsing XML document: {:?}", e),
@@ -73,15 +63,13 @@ fn parse_tag_token(
     commands: &mut Commands,
     parent: NodeId,
     attributes: Vec<xml::attribute::OwnedAttribute>,
-    parent_pipeable: bool,
-) -> (NodeId, bool) {
+) -> NodeId {
     let name = find_attribute(&attributes, "name");
     let help = find_opt_attribute(&attributes, "help");
     let kind = find_opt_attribute(&attributes, "kind");
     let argument = find_opt_attribute(&attributes, "argument");
     let cmd_name = find_opt_attribute(&attributes, "cmd");
-    let pipe_attr = find_opt_attribute(&attributes, "pipe");
-    let pipeable = pipe_attr.map(|v| v == "true").unwrap_or(parent_pipeable);
+    let pipeable = find_opt_attribute(&attributes, "pipeable") == Some("true");
     let callback = cmd_name.map(|name| match name {
         "cmd_config" => internal_commands::cmd_config,
         "cmd_list" => internal_commands::cmd_list,
@@ -172,7 +160,7 @@ fn parse_tag_token(
     let token = Token::new(name, help, kind, argument, action, false, pipeable);
 
     // Link new token.
-    (commands.add_token(parent, token), pipeable)
+    commands.add_token(parent, token)
 }
 
 fn find_attribute<'a>(

@@ -122,3 +122,11 @@ impl Token {
         }
     }
 }
+
+/// Returns `true` if the token or any of its ancestors has `pipeable = true`.
+pub fn is_pipeable(commands: &Commands, token_id: NodeId) -> bool {
+    std::iter::once(token_id)
+        .chain(token_id.ancestors(&commands.arena))
+        .filter_map(|id| commands.get_opt_token(id))
+        .any(|t| t.pipeable)
+}
