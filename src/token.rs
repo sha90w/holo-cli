@@ -7,6 +7,7 @@
 use indextree::{Arena, NodeId};
 use yang4::schema::SchemaNode;
 
+use crate::error::CallbackError;
 use crate::parser::ParsedArgs;
 use crate::pipe::PipeRegistry;
 use crate::session::Session;
@@ -46,7 +47,7 @@ type Callback = fn(
     commands: &Commands,
     session: &mut Session,
     args: ParsedArgs,
-) -> Result<bool, String>;
+) -> Result<bool, CallbackError>;
 
 // ===== impl Commands =====
 

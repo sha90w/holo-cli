@@ -18,6 +18,7 @@ use yang4::data::{
 use yang4::schema::SchemaNodeKind;
 
 use crate::YANG_CTX;
+use crate::error::CallbackError;
 use crate::grpc::proto;
 use crate::parser::ParsedArgs;
 use crate::session::{CommandMode, ConfigurationType, Session};
@@ -197,7 +198,7 @@ impl<'a> YangTableBuilder<'a> {
     }
 
     // Builds and displays the table.
-    pub fn show(self) -> Result<(), String> {
+    pub fn show(self) -> Result<(), CallbackError> {
         let xpath_req = "/ietf-routing:routing/control-plane-protocols";
 
         // Fetch data.
@@ -224,8 +225,8 @@ impl<'a> YangTableBuilder<'a> {
         // Print the table.
         if !table.is_empty() {
             let writer = self.session.writer();
-            table.print(writer).map_err(|e| e.to_string())?;
-            writeln!(writer).map_err(|e| e.to_string())?;
+            table.print(writer)?;
+            writeln!(writer)?;
         }
 
         Ok(())
@@ -247,10 +248,13 @@ fn get_opt_arg(args: &mut ParsedArgs, name: &str) -> Option<String> {
     None
 }
 
-fn write_output(session: &mut Session, data: &str) -> Result<(), String> {
+fn write_output(
+    session: &mut Session,
+    data: &str,
+) -> Result<(), std::io::Error> {
     let w = session.writer();
-    w.write_all(data.as_bytes()).map_err(|e| e.to_string())?;
-    writeln!(w).map_err(|e| e.to_string())?;
+    w.write_all(data.as_bytes())?;
+    writeln!(w)?;
     Ok(())
 }
 
@@ -313,7 +317,7 @@ pub fn cmd_config(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let mode = CommandMode::Configure { nodes: vec![] };
     session.mode_set(mode);
     Ok(false)
@@ -325,7 +329,7 @@ pub fn cmd_exit_exec(
     _commands: &Commands,
     _session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Do nothing.
     Ok(true)
 }
@@ -334,7 +338,7 @@ pub fn cmd_exit_config(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     session.mode_config_exit();
     Ok(false)
 }
@@ -345,7 +349,7 @@ pub fn cmd_end(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     session.mode_set(CommandMode::Operational);
     Ok(false)
 }
@@ -356,7 +360,7 @@ pub fn cmd_list(
     commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     match session.mode() {
         CommandMode::Operational => {
             // List EXEC-level commands.
@@ -365,11 +369,12 @@ pub fn cmd_list(
         CommandMode::Configure { .. } => {
             // List internal configuration commands first.
             cmd_list_root(commands, session, &commands.config_dflt_internal);
-            writeln!(session.writer(), "---").map_err(|e| e.to_string())?;
+            writeln!(session.writer(), "---")?;
             cmd_list_root(commands, session, &commands.config_root_internal);
-            writeln!(session.writer(), "---").map_err(|e| e.to_string())?;
+            writeln!(session.writer(), "---")?;
             // List YANG configuration commands.
-            cmd_list_root(commands, session, &session.mode().token(commands));
+            let yang_root = session.mode().token(commands);
+            cmd_list_root(commands, session, &yang_root);
         }
     }
 
@@ -406,7 +411,7 @@ pub fn cmd_list_root(
             cmd_string.push(' ');
         }
 
-        writeln!(session.writer(), "{}", cmd_string).unwrap();
+        let _ = writeln!(session.writer(), "{}", cmd_string);
     }
 }
 
@@ -416,7 +421,7 @@ pub fn cmd_pwd(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     println!(
         "{}",
         session.mode().data_path().unwrap_or_else(|| "/".to_owned())
@@ -430,7 +435,7 @@ pub fn cmd_top(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     session.mode_config_top();
     Ok(false)
 }
@@ -441,7 +446,7 @@ pub fn cmd_discard(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     session.candidate_discard();
     Ok(false)
 }
@@ -452,7 +457,7 @@ pub fn cmd_commit(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let comment = get_opt_arg(&mut args, "comment");
     match session.candidate_commit(comment) {
         Ok(_) => {
@@ -472,7 +477,7 @@ pub fn cmd_validate(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     match session.candidate_validate() {
         Ok(_) => println!("% candidate configuration validated successfully"),
         Err(error) => {
@@ -573,7 +578,7 @@ pub fn cmd_show_config(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse parameters.
     let config_type = get_arg(&mut args, "configuration");
     let config_type = match config_type.as_str() {
@@ -607,7 +612,7 @@ pub fn cmd_show_config_changes(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let running = session.get_configuration(ConfigurationType::Running);
     let running = cmd_show_config_cmds(running, false);
     let candidate = session.get_configuration(ConfigurationType::Candidate);
@@ -630,7 +635,7 @@ pub fn cmd_show_state(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let xpath = get_opt_arg(&mut args, "xpath");
     let format = get_opt_arg(&mut args, "format");
     let format = match format.as_deref() {
@@ -658,7 +663,7 @@ pub fn cmd_show_yang_modules(
     _commands: &Commands,
     _session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Create the table
     let mut table = Table::new();
     table.set_format(*format::consts::FORMAT_NO_BORDER_LINE_SEPARATOR);
@@ -704,7 +709,7 @@ pub fn cmd_show_isis_interface(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::All)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_ISIS))
@@ -724,7 +729,7 @@ pub fn cmd_show_isis_adjacency(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let hostnames = isis_hostnames(session)?;
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
@@ -754,7 +759,7 @@ pub fn cmd_show_isis_database(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let hostnames = isis_hostnames(session)?;
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
@@ -786,7 +791,7 @@ pub fn cmd_show_isis_route(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_ISIS))
@@ -855,7 +860,7 @@ pub fn cmd_show_ospf_interface(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -894,7 +899,7 @@ pub fn cmd_show_ospf_interface_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -963,7 +968,7 @@ pub fn cmd_show_ospf_vlink(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1004,7 +1009,7 @@ pub fn cmd_show_ospf_neighbor(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1050,7 +1055,7 @@ pub fn cmd_show_ospf_neighbor_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
@@ -1139,7 +1144,7 @@ pub fn cmd_show_ospf_database_as(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1182,7 +1187,7 @@ pub fn cmd_show_ospf_database_area(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1227,7 +1232,7 @@ pub fn cmd_show_ospf_database_link(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1274,7 +1279,7 @@ pub fn cmd_show_ospf_route(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1302,7 +1307,7 @@ pub fn cmd_show_ospf_hostnames(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ospfv2" => PROTOCOL_OSPFV2,
         "ospfv3" => PROTOCOL_OSPFV3,
@@ -1363,7 +1368,7 @@ pub fn cmd_show_rip_interface(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ripv2" => PROTOCOL_RIPV2,
@@ -1387,7 +1392,7 @@ pub fn cmd_show_rip_interface_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let protocol = match get_arg(&mut args, "protocol").as_str() {
         "ripv2" => PROTOCOL_RIPV2,
@@ -1455,7 +1460,7 @@ pub fn cmd_show_rip_neighbor(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let (protocol, afi, address) = match get_arg(&mut args, "protocol").as_str()
     {
@@ -1483,7 +1488,7 @@ pub fn cmd_show_rip_neighbor_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let (protocol, afi, address) = match get_arg(&mut args, "protocol").as_str()
     {
@@ -1542,7 +1547,7 @@ pub fn cmd_show_rip_route(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let (protocol, afi, prefix) = match get_arg(&mut args, "protocol").as_str()
     {
@@ -1590,7 +1595,7 @@ pub fn cmd_show_mpls_ldp_discovery(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_MPLS_LDP))
@@ -1611,7 +1616,7 @@ pub fn cmd_show_mpls_ldp_discovery_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let name = get_opt_arg(&mut args, "name");
 
@@ -1700,7 +1705,7 @@ pub fn cmd_show_mpls_ldp_peer(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_MPLS_LDP))
@@ -1722,7 +1727,7 @@ pub fn cmd_show_mpls_ldp_peer_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     // Parse arguments.
     let lsr_id = get_opt_arg(&mut args, "lsr-id");
 
@@ -1872,7 +1877,7 @@ pub fn cmd_show_mpls_ldp_binding_address(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_MPLS_LDP))
@@ -1906,7 +1911,7 @@ pub fn cmd_show_mpls_ldp_binding_fec(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     YangTableBuilder::new(session, proto::get_request::DataType::State)
         .xpath(XPATH_PROTOCOL)
         .filter_list_key("type", Some(PROTOCOL_MPLS_LDP))
@@ -1978,13 +1983,13 @@ pub fn cmd_show_bgp_summary(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let afi = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
 
     let afi = match afi.as_str() {
         "ipv4" => "iana-bgp-types:ipv4-unicast",
         "ipv6" => "iana-bgp-types:ipv6-unicast",
-        _ => return Err(format!("Unsupported address family: {}", afi)),
+        _ => return Err(format!("Unsupported address family: {}", afi).into()),
     };
 
     let afi_xpath = format!("afi-safis/afi-safi[name='{}']/prefixes", afi);
@@ -2096,7 +2101,7 @@ pub fn cmd_show_bgp_neighbor(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let attrs = bgp_get_attrs(session).unwrap();
 
     let neighbor = get_arg(&mut args, "neighbor");
@@ -2106,7 +2111,7 @@ pub fn cmd_show_bgp_neighbor(
     let afi = match afi.as_str() {
         "ipv4" => "ipv4-unicast",
         "ipv6" => "ipv6-unicast",
-        _ => return Err(format!("Unsupported address family: {}", afi)),
+        _ => return Err(format!("Unsupported address family: {}", afi).into()),
     };
 
     let rt_type = match rt_type.as_str() {
@@ -2145,8 +2150,7 @@ pub fn cmd_show_bgp_neighbor(
         let prefix = route.child_opt_value("prefix").unwrap();
         let index = route.child_opt_value("attr-index").unwrap();
         let route_attrs = attrs.get(&index).unwrap();
-        writeln!(output, "{:>20} {}", prefix, route_attrs)
-            .map_err(|e| e.to_string())?;
+        writeln!(output, "{:>20} {}", prefix, route_attrs)?;
     }
 
     Ok(false)
@@ -2163,7 +2167,7 @@ pub fn cmd_show_bgp_neighbor_detail(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let neighbor_addr = get_opt_arg(&mut args, "neighbor");
 
     let xpath_bgp_instance = format!(
@@ -2392,7 +2396,7 @@ pub fn cmd_clear_isis_adjacency(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let yang_ctx = YANG_CTX.get().unwrap();
     let data = r#"{"ietf-isis:clear-adjacency": {}}"#;
     let data = DataTree::parse_op_string(
@@ -2414,7 +2418,7 @@ pub fn cmd_clear_isis_database(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let yang_ctx = YANG_CTX.get().unwrap();
     let data = r#"{"ietf-isis:clear-database": {}}"#;
     let data = DataTree::parse_op_string(
@@ -2439,7 +2443,7 @@ pub fn cmd_clear_bgp_neighbor(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let neighbor = get_opt_arg(&mut args, "neighbor");
     let clear_type = get_opt_arg(&mut args, "type");
     let yang_ctx = YANG_CTX.get().unwrap();
@@ -2510,7 +2514,7 @@ pub fn cmd_show_route(
     _commands: &Commands,
     session: &mut Session,
     mut args: ParsedArgs,
-) -> Result<bool, String> {
+) -> Result<bool, CallbackError> {
     let rib_name = get_opt_arg(&mut args, "afi").unwrap_or("ipv4".to_owned());
     let fetch_xpath = format!("{}[name='{}']", XPATH_RIB, rib_name);
     let route_xpath = format!("{}/routes/route", fetch_xpath);

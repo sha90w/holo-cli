@@ -50,6 +50,13 @@ pub enum PipeError {
         got: usize,
     },
     NotAllowed,
+    Io(std::io::Error),
+    Spawn {
+        command: String,
+        source: std::io::Error,
+    },
+    ThreadPanicked,
+    Filter(String),
 }
 
 enum PipeStage {
@@ -212,6 +219,22 @@ impl fmt::Display for PipeError {
             PipeError::NotAllowed => {
                 write!(f, "pipes are not supported for this command")
             }
+            PipeError::Io(e) => {
+                write!(f, "pipe I/O error: {}", e)
+            }
+            PipeError::Spawn { command, source } => {
+                write!(
+                    f,
+                    "failed to spawn '{}': {}",
+                    command, source
+                )
+            }
+            PipeError::ThreadPanicked => {
+                write!(f, "pipe thread panicked")
+            }
+            PipeError::Filter(e) => {
+                write!(f, "pipe filter error: {}", e)
+            }
         }
     }
 }
@@ -311,7 +334,7 @@ pub fn default_registry() -> PipeRegistry {
 /// Output sink that can be converted to either `Stdio` (for external
 /// processes) or `Box<dyn Write + Send>` (for builtin threads).
 enum ChainOutput {
-    PagerStdin(std::process::ChildStdin),
+    ChildStdin(std::process::ChildStdin),
     PipeWriter(std::io::PipeWriter),
     Terminal,
 }
@@ -319,7 +342,7 @@ enum ChainOutput {
 impl ChainOutput {
     fn into_stdio(self) -> Stdio {
         match self {
-            ChainOutput::PagerStdin(s) => Stdio::from(s),
+            ChainOutput::ChildStdin(s) => Stdio::from(s),
             ChainOutput::PipeWriter(w) => Stdio::from(w),
             ChainOutput::Terminal => Stdio::inherit(),
         }
@@ -327,7 +350,7 @@ impl ChainOutput {
 
     fn into_writer(self) -> Box<dyn Write + Send> {
         match self {
-            ChainOutput::PagerStdin(s) => Box::new(s),
+            ChainOutput::ChildStdin(s) => Box::new(s),
             ChainOutput::PipeWriter(w) => Box::new(w),
             ChainOutput::Terminal => Box::new(std::io::stdout()),
         }
@@ -349,7 +372,7 @@ impl PipeChain {
         registry: &PipeRegistry,
         pipes: &[ParsedPipe],
         use_pager: bool,
-    ) -> Result<Self, String> {
+    ) -> Result<Self, PipeError> {
         let has_no_more = pipes
             .iter()
             .any(|p| registry.commands()[p.command_idx].name == "no-more");
@@ -359,10 +382,18 @@ impl PipeChain {
 
         // Determine the final output destination.
         let (mut next_output, pager) = if should_page {
-            let mut pager = spawn_pager()
-                .map_err(|e| format!("failed to spawn pager: {}", e))?;
-            let stdin = pager.stdin.take().unwrap();
-            (ChainOutput::PagerStdin(stdin), Some(pager))
+            let mut pager =
+                spawn_pager().map_err(|e| PipeError::Spawn {
+                    command: "less".to_owned(),
+                    source: e,
+                })?;
+            let stdin =
+                pager.stdin.take().ok_or_else(|| {
+                    PipeError::Io(std::io::Error::other(
+                        "pager has no stdin",
+                    ))
+                })?;
+            (ChainOutput::ChildStdin(stdin), Some(pager))
         } else {
             (ChainOutput::Terminal, None)
         };
@@ -383,39 +414,25 @@ impl PipeChain {
                         .stdin(Stdio::piped())
                         .stdout(next_output.into_stdio())
                         .spawn()
-                        .map_err(|e| {
-                            format!("failed to spawn '{}': {}", binary, e)
+                        .map_err(|e| PipeError::Spawn {
+                            command: binary.to_string(),
+                            source: e,
                         })?;
-                    let child_stdin = child.stdin.take().unwrap();
-                    next_output = ChainOutput::PipeWriter(
-                        // Convert ChildStdin to PipeWriter
-                        // via pipe pair.
-                        {
-                            let (mut reader, writer) = std::io::pipe()
-                                .map_err(|e| {
-                                    format!("failed to create pipe: {}", e)
-                                })?;
-                            // Spawn a forwarding thread from
-                            // reader to child stdin.
-                            let mut child_stdin = child_stdin;
-                            stages.push(PipeStage::Thread(std::thread::spawn(
-                                move || {
-                                    std::io::copy(
-                                        &mut reader,
-                                        &mut child_stdin,
-                                    )
-                                    .map_err(|e| e.to_string())?;
-                                    Ok(())
-                                },
-                            )));
-                            writer
-                        },
-                    );
+                    let child_stdin =
+                        child.stdin.take().ok_or_else(|| {
+                            PipeError::Io(std::io::Error::other(
+                                format!(
+                                    "'{}' process has no stdin",
+                                    binary
+                                ),
+                            ))
+                        })?;
+                    next_output = ChainOutput::ChildStdin(child_stdin);
                     stages.push(PipeStage::Process(child));
                 }
                 PipeAction::Builtin(func) => {
-                    let (pipe_reader, pipe_writer) = std::io::pipe()
-                        .map_err(|e| format!("failed to create pipe: {}", e))?;
+                    let (pipe_reader, pipe_writer) =
+                        std::io::pipe().map_err(PipeError::Io)?;
                     let func = *func;
                     let args = parsed.args.clone();
                     let writer_out = next_output.into_writer();
@@ -439,7 +456,7 @@ impl PipeChain {
         self.writer.take()
     }
 
-    pub fn finish(mut self) -> Result<(), String> {
+    pub fn finish(mut self) -> Result<(), PipeError> {
         // Drop writer to signal EOF to the first pipe stage.
         drop(self.writer.take());
 
@@ -448,28 +465,20 @@ impl PipeChain {
         for stage in self.stages.drain(..).rev() {
             match stage {
                 PipeStage::Thread(handle) => match handle.join() {
-                    Ok(result) => result?,
-                    Err(_) => {
-                        return Err("pipe thread panicked".to_owned());
+                    Ok(result) => {
+                        result.map_err(PipeError::Filter)?
                     }
+                    Err(_) => return Err(PipeError::ThreadPanicked),
                 },
                 PipeStage::Process(mut child) => {
-                    child.wait().map_err(|e| {
-                        format!(
-                            "failed to wait for pipe process: \
-                             {}",
-                            e
-                        )
-                    })?;
+                    child.wait().map_err(PipeError::Io)?;
                 }
             }
         }
 
         // Wait for pager if present.
         if let Some(mut pager) = self.pager.take() {
-            pager
-                .wait()
-                .map_err(|e| format!("failed to wait for pager: {}", e))?;
+            pager.wait().map_err(PipeError::Io)?;
         }
 
         Ok(())

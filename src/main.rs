@@ -21,7 +21,7 @@ use clap::{App, Arg};
 use reedline::Signal;
 use yang4::context::{Context, ContextFlags};
 
-use crate::error::Error;
+use crate::error::{CallbackError, Error};
 use crate::grpc::GrpcClient;
 use crate::session::{CommandMode, Session};
 use crate::terminal::CliPrompt;
@@ -105,7 +105,7 @@ impl Cli {
                             &parsed_pipes,
                             self.session.use_pager(),
                         )
-                        .map_err(Error::Callback)?;
+                        .map_err(Error::Pipe)?;
                         let writer = chain.take_writer();
                         self.session.set_writer(writer);
                         Some(chain)
@@ -141,14 +141,11 @@ impl Cli {
                     // BrokenPipe as non-fatal.
                     match result {
                         Ok(should_exit) => exit = should_exit,
-                        Err(msg)
-                            if msg.contains("Broken pipe")
-                                || msg.contains("broken pipe") =>
-                        {
+                        Err(CallbackError::BrokenPipe) => {
                             // Pipe closed early — not an error.
                         }
-                        Err(msg) => {
-                            return Err(Error::Callback(msg));
+                        Err(e) => {
+                            return Err(Error::Callback(e));
                         }
                     }
                 }

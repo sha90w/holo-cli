@@ -28,7 +28,7 @@ pub struct Session {
     running: DataTree<'static>,
     candidate: Option<DataTree<'static>>,
     grpc_client: GrpcClient,
-    writer: Option<Box<dyn std::io::Write + Send>>,
+    writer: Box<dyn std::io::Write + Send>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, EnumAsInner)]
@@ -81,7 +81,7 @@ impl Session {
             running,
             candidate: None,
             grpc_client,
-            writer: None,
+            writer: Box::new(std::io::stdout()),
         }
     }
 
@@ -103,15 +103,15 @@ impl Session {
         self.use_pager
     }
 
-    pub fn set_writer(&mut self, w: Option<Box<dyn std::io::Write + Send>>) {
-        self.writer = w;
+    pub fn set_writer(
+        &mut self,
+        w: Option<Box<dyn std::io::Write + Send>>,
+    ) {
+        self.writer = w.unwrap_or_else(|| Box::new(std::io::stdout()));
     }
 
     pub fn writer(&mut self) -> &mut dyn std::io::Write {
-        if self.writer.is_none() {
-            self.writer = Some(Box::new(std::io::stdout()));
-        }
-        self.writer.as_mut().unwrap().as_mut()
+        self.writer.as_mut()
     }
 
     fn update_prompt(&mut self) {
