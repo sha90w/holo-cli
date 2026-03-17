@@ -582,29 +582,19 @@ fn format_config_node(
     let pad = " ".repeat(indent);
     match snode.kind() {
         SchemaNodeKind::Container => {
-            if snode.is_np_container() {
-                // Non-presence container — recurse without braces.
-                for child in dnode.children().filter(|d| {
-                    !d.schema().is_schema_only()
-                        && (with_defaults || !d.is_default())
-                }) {
-                    format_config_node(&child, indent, with_defaults, output);
-                }
-            } else {
-                writeln!(output, "{}{} {{", pad, snode.name()).unwrap();
-                for child in dnode.children().filter(|d| {
-                    !d.schema().is_schema_only()
-                        && (with_defaults || !d.is_default())
-                }) {
-                    format_config_node(
-                        &child,
-                        indent + 4,
-                        with_defaults,
-                        output,
-                    );
-                }
-                writeln!(output, "{}}}", pad).unwrap();
+            writeln!(output, "{}{} {{", pad, snode.name()).unwrap();
+            for child in dnode.children().filter(|d| {
+                !d.schema().is_schema_only()
+                    && (with_defaults || !d.is_default())
+            }) {
+                format_config_node(
+                    &child,
+                    indent + 4,
+                    with_defaults,
+                    output,
+                );
             }
+            writeln!(output, "{}}}", pad).unwrap();
         }
         SchemaNodeKind::List => {
             let keys: Vec<String> = dnode
