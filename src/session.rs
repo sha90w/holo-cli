@@ -213,7 +213,10 @@ impl Session {
         {
             // Ignore schema nodes above the current CLI node.
             if skip > 0 {
-                if snode.kind() == SchemaNodeKind::List || snode.is_list_key() {
+                if snode.kind() == SchemaNodeKind::Container
+                    || snode.kind() == SchemaNodeKind::List
+                    || snode.is_list_key()
+                {
                     skip -= 1;
                     continue;
                 }
@@ -302,7 +305,10 @@ impl Session {
         {
             // Ignore schema nodes above the current CLI node.
             if skip > 0 {
-                if snode.kind() == SchemaNodeKind::List || snode.is_list_key() {
+                if snode.kind() == SchemaNodeKind::Container
+                    || snode.kind() == SchemaNodeKind::List
+                    || snode.is_list_key()
+                {
                     skip -= 1;
                     continue;
                 }
@@ -323,14 +329,18 @@ impl Session {
             // Push every container/list level onto the nav stack.
             match snode.kind() {
                 SchemaNodeKind::Container | SchemaNodeKind::List => {
-                    let token_snode = match snode.list_keys().last() {
+                    // Use the list/container token as edit point so
+                    // yang_edit_point returns a node whose children
+                    // include all list members (not just the key).
+                    let token_id =
+                        token_yang::snode_get_token_id(&snode);
+                    let cli_snode = match snode.list_keys().last() {
                         Some(last_key) => last_key.clone(),
                         None => snode.clone(),
                     };
-                    let token_id = token_yang::snode_get_token_id(&token_snode);
                     token_yang::update_cli_path(
                         &mut cli_path,
-                        &token_snode,
+                        &cli_snode,
                         &list_keys,
                     );
                     let node = CommandNode::new(
