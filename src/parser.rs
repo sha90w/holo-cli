@@ -179,6 +179,23 @@ pub fn parse_command_try(
             Some(token) if token.action.is_some() => {
                 Ok(ParsedCommand::new(negate, prefix, curr_token_id, args))
             }
+            _ if prefix == CommandPrefix::Delete => {
+                // For delete, accept a leaf name without its value
+                // by using the child value token's action.
+                if let Some(child_id) =
+                    curr_token_id.children(&commands.arena).next()
+                {
+                    if commands
+                        .get_opt_token(child_id)
+                        .is_some_and(|t| t.action.is_some())
+                    {
+                        return Ok(ParsedCommand::new(
+                            negate, prefix, child_id, args,
+                        ));
+                    }
+                }
+                Err(ParserError::Incomplete(curr_token_id, prefix))
+            }
             _ => Err(ParserError::Incomplete(curr_token_id, prefix)),
         }
     } else {
