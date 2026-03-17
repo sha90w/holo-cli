@@ -125,12 +125,17 @@ pub fn update_cli_path(
     snode: &SchemaNode<'_>,
     list_keys: &ParsedArgs,
 ) {
-    let snode = snode
+    if let Some(list_snode) = snode
         .ancestors()
         .find(|snode| snode.kind() == SchemaNodeKind::List)
-        .unwrap();
-    let list_keys = list_keys.iter().map(|(_, value)| value).join(" ");
-    write!(path, "/{}[{}]", snode.name(), list_keys).unwrap();
+    {
+        let list_keys =
+            list_keys.iter().map(|(_, value)| value).join(" ");
+        write!(path, "/{}[{}]", list_snode.name(), list_keys).unwrap();
+    } else {
+        // Container node — just append the name.
+        write!(path, "/{}", snode.name()).unwrap();
+    }
 }
 
 // Save token ID in the schema node private pointer.
