@@ -363,7 +363,10 @@ fn complete_add_token(
     let Some(token) = commands.get_opt_token(token_id) else {
         return completions;
     };
-    if token.kind == TokenKind::Word && !token.matches(word, true) {
+    if token.kind == TokenKind::Word
+        && token.matches(word, false)
+        && !token.matches(word, true)
+    {
         completions.push((token.name.clone(), token.help.clone()));
     } else if token.kind == TokenKind::String && !partial {
         completions.push((token.name.to_uppercase(), token.help.clone()));
