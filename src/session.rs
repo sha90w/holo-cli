@@ -85,6 +85,24 @@ impl Session {
         }
     }
 
+    /// Create a test Session without gRPC. Requires YANG_CTX to be
+    /// initialized.
+    #[cfg(test)]
+    pub fn new_test(mode: CommandMode) -> Session {
+        let yang_ctx = YANG_CTX.get().unwrap();
+        let running = DataTree::new(yang_ctx);
+        Session {
+            hostname: DEFAULT_HOSTNAME.to_owned(),
+            prompt: String::new(),
+            use_pager: false,
+            mode,
+            running,
+            candidate: None,
+            grpc_client: GrpcClient::new_test(),
+            writer: Box::new(std::io::sink()),
+        }
+    }
+
     pub fn update_hostname(&mut self) {
         self.hostname = self
             .running

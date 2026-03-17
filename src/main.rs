@@ -14,6 +14,8 @@ mod terminal;
 mod token;
 mod token_xml;
 mod token_yang;
+#[cfg(test)]
+mod tests;
 
 use std::sync::{Arc, Mutex, OnceLock};
 

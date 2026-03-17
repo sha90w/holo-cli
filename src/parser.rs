@@ -175,11 +175,11 @@ pub fn parse_command_try(
 
     // Check if the matched token represents a command.
     if curr_token_id != start_token_id {
-        let token = commands.get_token(curr_token_id);
-        if token.action.is_some() {
-            Ok(ParsedCommand::new(negate, prefix, curr_token_id, args))
-        } else {
-            Err(ParserError::Incomplete(curr_token_id, prefix))
+        match commands.get_opt_token(curr_token_id) {
+            Some(token) if token.action.is_some() => {
+                Ok(ParsedCommand::new(negate, prefix, curr_token_id, args))
+            }
+            _ => Err(ParserError::Incomplete(curr_token_id, prefix)),
         }
     } else {
         let tokens =

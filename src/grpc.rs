@@ -35,6 +35,22 @@ pub struct GrpcClient {
 // ===== impl GrpcClient =====
 
 impl GrpcClient {
+    /// Create a GrpcClient with a lazy (non-connecting) channel for
+    /// testing. No actual connection is established.
+    #[cfg(test)]
+    pub fn new_test() -> Self {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to obtain a new runtime object");
+        let channel = runtime.block_on(async {
+            tonic::transport::Channel::from_static("http://[::1]:1")
+                .connect_lazy()
+        });
+        let client = NorthboundClient::new(channel);
+        GrpcClient { client, runtime }
+    }
+
     pub fn connect(dest: &'static str) -> Result<Self, StdError> {
         // Initialize tokio runtime.
         let runtime = tokio::runtime::Builder::new_current_thread()
