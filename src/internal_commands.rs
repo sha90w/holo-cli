@@ -582,7 +582,7 @@ fn format_config_node(
     let pad = " ".repeat(indent);
     match snode.kind() {
         SchemaNodeKind::Container => {
-            writeln!(output, "{}{} {{", pad, snode.name()).unwrap();
+            let mut inner = String::new();
             for child in dnode.children().filter(|d| {
                 !d.schema().is_schema_only()
                     && (with_defaults || !d.is_default())
@@ -591,10 +591,15 @@ fn format_config_node(
                     &child,
                     indent + 4,
                     with_defaults,
-                    output,
+                    &mut inner,
                 );
             }
-            writeln!(output, "{}}}", pad).unwrap();
+            if !inner.is_empty() {
+                writeln!(output, "{}{} {{", pad, snode.name())
+                    .unwrap();
+                output.push_str(&inner);
+                writeln!(output, "{}}}", pad).unwrap();
+            }
         }
         SchemaNodeKind::List => {
             let keys: Vec<String> = dnode
