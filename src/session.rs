@@ -329,18 +329,18 @@ impl Session {
             // Push every container/list level onto the nav stack.
             match snode.kind() {
                 SchemaNodeKind::Container | SchemaNodeKind::List => {
-                    // Use the list/container token as edit point so
-                    // yang_edit_point returns a node whose children
-                    // include all list members (not just the key).
-                    let token_id =
-                        token_yang::snode_get_token_id(&snode);
-                    let cli_snode = match snode.list_keys().last() {
+                    // For lists, use the last key's token as edit
+                    // point — gen_cmds_recursive places non-key
+                    // children under the last key token.
+                    let token_snode = match snode.list_keys().last() {
                         Some(last_key) => last_key.clone(),
                         None => snode.clone(),
                     };
+                    let token_id =
+                        token_yang::snode_get_token_id(&token_snode);
                     token_yang::update_cli_path(
                         &mut cli_path,
-                        &cli_snode,
+                        &token_snode,
                         &list_keys,
                     );
                     let node = CommandNode::new(
