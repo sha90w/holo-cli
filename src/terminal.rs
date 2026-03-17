@@ -147,7 +147,11 @@ impl Completer for CliCompleter {
                                 return true;
                             }
                             // For edit, only show containers and lists.
-                            let token = cli.commands.get_token(*id);
+                            let Some(token) =
+                                cli.commands.get_opt_token(*id)
+                            else {
+                                return false;
+                            };
                             match &token.action {
                                 Some(Action::ConfigEdit(snode)) => matches!(
                                     snode.kind(),
@@ -334,7 +338,9 @@ fn complete_add_token(
 ) -> Vec<(String, Option<String>)> {
     let mut completions = vec![];
 
-    let token = commands.get_token(token_id);
+    let Some(token) = commands.get_opt_token(token_id) else {
+        return completions;
+    };
     if token.kind == TokenKind::Word && !token.matches(word, true) {
         completions.push((token.name.clone(), token.help.clone()));
     } else if token.kind == TokenKind::String && !partial {
@@ -354,7 +360,7 @@ fn complete_add_tokens(
     token_ids
         .into_iter()
         .filter_map(|token_id| {
-            let token = commands.get_token(token_id);
+            let token = commands.get_opt_token(token_id)?;
             if token.kind == TokenKind::Word {
                 Some((token.name.clone(), token.help.clone()))
             } else if token.kind == TokenKind::String && !partial {
