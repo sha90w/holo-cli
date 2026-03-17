@@ -102,7 +102,7 @@ fn add_token(
 
 fn is_full_command(snode: &SchemaNode<'_>, is_argument: bool) -> bool {
     match snode.kind() {
-        SchemaNodeKind::Container => !snode.is_np_container(),
+        SchemaNodeKind::Container => true,
         SchemaNodeKind::Leaf => {
             if snode.leaf_type().unwrap().base_type() == DataValueType::Empty {
                 true
