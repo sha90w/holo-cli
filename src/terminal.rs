@@ -133,12 +133,34 @@ impl Completer for CliCompleter {
             })
             | Err(ParserError::Incomplete(token_id, prefix)) => {
                 if partial {
-                    complete_add_token(
+                    let completions = complete_add_token(
                         &cli.commands,
                         token_id,
                         partial,
                         last_word,
-                    )
+                    );
+                    if !completions.is_empty() {
+                        completions
+                    } else {
+                        // Fallback: token_id may be a root node
+                        // (after subtree delegation). Search the
+                        // start token's children for matches.
+                        let matching: Vec<_> = wd_token_id
+                            .children(&cli.commands.arena)
+                            .filter(|id| {
+                                cli.commands
+                                    .get_opt_token(*id)
+                                    .is_some_and(|t| {
+                                        t.matches(last_word, false)
+                                    })
+                            })
+                            .collect();
+                        complete_add_tokens(
+                            &cli.commands,
+                            partial,
+                            matching,
+                        )
+                    }
                 } else {
                     let token_ids: Vec<_> = token_id
                         .children(&cli.commands.arena)
