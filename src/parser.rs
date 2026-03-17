@@ -11,7 +11,7 @@ use indextree::NodeId;
 
 use crate::error::ParserError;
 use crate::session::Session;
-use crate::token::{Commands, TokenKind};
+use crate::token::{Action, Commands, TokenKind};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CommandPrefix {
@@ -181,17 +181,20 @@ pub fn parse_command_try(
             }
             _ if prefix == CommandPrefix::Delete => {
                 // For delete, accept a leaf name without its value
-                // by using the child value token's action.
+                // by using the child value token's action — but only
+                // for leaves, not list keys (lists still need keys).
                 if let Some(child_id) =
                     curr_token_id.children(&commands.arena).next()
                 {
-                    if commands
+                    if let Some(Action::ConfigEdit(snode)) = commands
                         .get_opt_token(child_id)
-                        .is_some_and(|t| t.action.is_some())
+                        .and_then(|t| t.action.as_ref())
                     {
-                        return Ok(ParsedCommand::new(
-                            negate, prefix, child_id, args,
-                        ));
+                        if !snode.is_list_key() {
+                            return Ok(ParsedCommand::new(
+                                negate, prefix, child_id, args,
+                            ));
+                        }
                     }
                 }
                 Err(ParserError::Incomplete(curr_token_id, prefix))
