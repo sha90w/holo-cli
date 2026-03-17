@@ -115,11 +115,17 @@ impl Session {
         self.prompt = match &self.mode {
             CommandMode::Operational => self.hostname.clone(),
             CommandMode::Configure { nodes } => {
-                let path = match nodes.last() {
-                    Some(node) => &node.cli_path,
-                    None => "",
+                let edit_line = match nodes.last() {
+                    Some(node) => {
+                        let path = node
+                            .cli_path
+                            .trim_start_matches('/')
+                            .replace('/', " ");
+                        format!("[edit {}]", path)
+                    }
+                    None => "[edit]".to_owned(),
                 };
-                format!("{}(config{})", self.hostname, path)
+                format!("{}\n{}", edit_line, self.hostname)
             }
         }
     }
@@ -167,6 +173,7 @@ impl Session {
     pub fn edit_candidate(
         &mut self,
         negate: bool,
+        navigate: bool,
         snode: &SchemaNode<'_>,
         mut args: ParsedArgs,
     ) -> Result<(), yang4::Error> {
@@ -207,7 +214,8 @@ impl Session {
             }
 
             // Update CLI node.
-            if !negate
+            if navigate
+                && !negate
                 && (snode.kind() == SchemaNodeKind::List || snode.is_list_key())
             {
                 let snode = match snode.list_keys().last() {
@@ -249,6 +257,82 @@ impl Session {
         } else {
             candidate.new_path(&path, value.as_deref(), false)?;
         }
+
+        Ok(())
+    }
+
+    pub fn navigate_edit(
+        &mut self,
+        snode: &SchemaNode<'_>,
+        mut args: ParsedArgs,
+    ) -> Result<(), yang4::Error> {
+        // Get data path and CLI path corresponding to the current node.
+        let mut path = self.mode.data_path().unwrap_or_default();
+        let mut cli_path = self.mode.cli_path().unwrap_or_default();
+
+        // Create list of schema nodes, ordered from parent to child.
+        let mut snodes = vec![];
+        if !snode.is_list_key() {
+            snodes.extend(snode.inclusive_ancestors());
+        } else {
+            snodes.extend(snode.ancestors());
+        }
+
+        // Iterate over all schema nodes starting from the root.
+        let mut skip = self.mode.as_configure().unwrap().len();
+        for snode in snodes.iter().filter(|snode| !snode.is_schema_only()).rev()
+        {
+            // Ignore schema nodes above the current CLI node.
+            if skip > 0 {
+                if snode.kind() == SchemaNodeKind::List || snode.is_list_key() {
+                    skip -= 1;
+                    continue;
+                }
+                if skip > 0 {
+                    continue;
+                }
+            }
+
+            // Update data path.
+            path += &format!("/{}:{}", snode.module().name(), snode.name());
+            let mut list_keys = ParsedArgs::new();
+            for snode in snode.list_keys() {
+                let arg = args.pop_front().unwrap();
+                path += &format!("[{}='{}']", snode.name(), arg.1);
+                list_keys.push_back(arg);
+            }
+
+            // Push every container/list level onto the nav stack.
+            match snode.kind() {
+                SchemaNodeKind::Container | SchemaNodeKind::List => {
+                    let token_snode = match snode.list_keys().last() {
+                        Some(last_key) => last_key.clone(),
+                        None => snode.clone(),
+                    };
+                    let token_id = token_yang::snode_get_token_id(&token_snode);
+                    token_yang::update_cli_path(
+                        &mut cli_path,
+                        &token_snode,
+                        &list_keys,
+                    );
+                    let node = CommandNode::new(
+                        token_id,
+                        cli_path.clone(),
+                        path.clone(),
+                    );
+                    self.mode_config_enter(node);
+                }
+                _ => {}
+            }
+        }
+
+        // Ensure all arguments were processed.
+        assert_eq!(args.len(), 0);
+
+        // Create structural nodes in the candidate so later `set`
+        // commands within this edit section have a valid parent path.
+        let candidate = self.candidate.as_mut().unwrap();
+        candidate.new_path(&path, None, false)?;
 
         Ok(())
     }
@@ -333,6 +417,13 @@ impl CommandMode {
     pub fn token(&self, commands: &Commands) -> NodeId {
         match self {
             CommandMode::Operational => commands.exec_root,
+            CommandMode::Configure { .. } => commands.config_dflt_internal,
+        }
+    }
+
+    pub fn yang_edit_point(&self, commands: &Commands) -> NodeId {
+        match self {
+            CommandMode::Operational => commands.config_root_yang,
             CommandMode::Configure { nodes } => match nodes.last() {
                 Some(node) => node.token_id,
                 None => commands.config_root_yang,

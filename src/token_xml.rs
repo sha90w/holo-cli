@@ -72,6 +72,11 @@ fn parse_tag_token(
     let pipeable = find_opt_attribute(&attributes, "pipe") == Some("true");
     let callback = cmd_name.map(|name| match name {
         "cmd_config" => internal_commands::cmd_config,
+        "cmd_set" => internal_commands::cmd_set,
+        "cmd_delete" => internal_commands::cmd_delete,
+        "cmd_edit" => internal_commands::cmd_edit,
+        "cmd_up" => internal_commands::cmd_up,
+        "cmd_run" => internal_commands::cmd_run,
         "cmd_list" => internal_commands::cmd_list,
         "cmd_exit_exec" => internal_commands::cmd_exit_exec,
         "cmd_exit_config" => internal_commands::cmd_exit_config,
@@ -82,7 +87,7 @@ fn parse_tag_token(
         "cmd_commit" => internal_commands::cmd_commit,
         "cmd_validate" => internal_commands::cmd_validate,
         "cmd_show_config" => internal_commands::cmd_show_config,
-        "cmd_show_config_changes" => internal_commands::cmd_show_config_changes,
+        "cmd_show_config_compare" => internal_commands::cmd_show_config_compare,
         "cmd_show_state" => internal_commands::cmd_show_state,
         "cmd_show_yang_modules" => internal_commands::cmd_show_yang_modules,
         "cmd_show_isis_interface" => internal_commands::cmd_show_isis_interface,

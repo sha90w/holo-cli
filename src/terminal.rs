@@ -16,11 +16,13 @@ use reedline::{
     Suggestion, Vi,
 };
 
+use yang4::schema::SchemaNodeKind;
+
 use crate::Cli;
 use crate::error::ParserError;
 use crate::parser::{self, ParsedCommand};
 use crate::pipe::PipeRegistry;
-use crate::token::{Commands, TokenKind, is_pipeable};
+use crate::token::{Action, Commands, TokenKind, is_pipeable};
 
 static DEFAULT_PROMPT_INDICATOR: &str = "# ";
 static DEFAULT_MULTILINE_INDICATOR: &str = "::: ";
@@ -100,7 +102,7 @@ impl Completer for CliCompleter {
                 base_cmd,
             ) {
                 Ok(parsed) => is_pipeable(&cli.commands, parsed.token_id),
-                Err(ParserError::Incomplete(tid)) => {
+                Err(ParserError::Incomplete(tid, _)) => {
                     is_pipeable(&cli.commands, tid)
                 }
                 _ => false,
@@ -126,8 +128,10 @@ impl Completer for CliCompleter {
             wd_token_id,
             line,
         ) {
-            Ok(ParsedCommand { token_id, .. })
-            | Err(ParserError::Incomplete(token_id)) => {
+            Ok(ParsedCommand {
+                token_id, prefix, ..
+            })
+            | Err(ParserError::Incomplete(token_id, prefix)) => {
                 if partial {
                     complete_add_token(
                         &cli.commands,
@@ -136,7 +140,24 @@ impl Completer for CliCompleter {
                         last_word,
                     )
                 } else {
-                    let token_ids = token_id.children(&cli.commands.arena);
+                    let token_ids: Vec<_> = token_id
+                        .children(&cli.commands.arena)
+                        .filter(|id| {
+                            if prefix != parser::CommandPrefix::Edit {
+                                return true;
+                            }
+                            // For edit, only show containers and lists.
+                            let token = cli.commands.get_token(*id);
+                            match &token.action {
+                                Some(Action::ConfigEdit(snode)) => matches!(
+                                    snode.kind(),
+                                    SchemaNodeKind::Container
+                                        | SchemaNodeKind::List
+                                ),
+                                _ => true,
+                            }
+                        })
+                        .collect();
                     complete_add_tokens(&cli.commands, partial, token_ids)
                 }
             }

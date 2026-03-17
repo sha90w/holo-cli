@@ -30,6 +30,7 @@ pub struct Token {
     pub action: Option<Action>,
     pub node_update: bool,
     pub pipeable: bool,
+    pub subtree_root: Option<NodeId>,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -72,6 +73,28 @@ impl Commands {
     pub fn gen_cmds(&mut self) {
         token_yang::gen_cmds(self);
         token_xml::gen_cmds(self);
+        self.wire_subtree_roots();
+    }
+
+    /// Set `subtree_root` on `set`, `edit`, and `delete` tokens so
+    /// the parser can delegate to the YANG config tree.
+    fn wire_subtree_roots(&mut self) {
+        let yang_root = self.config_root_yang;
+        for child_id in self
+            .config_dflt_internal
+            .children(&self.arena)
+            .collect::<Vec<_>>()
+        {
+            if let Some(token) = self.arena.get_mut(child_id).unwrap().get_mut()
+            {
+                match token.name.as_str() {
+                    "set" | "edit" | "delete" => {
+                        token.subtree_root = Some(yang_root);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 
     pub fn add_token(&mut self, parent: NodeId, token: Token) -> NodeId {
@@ -109,6 +132,7 @@ impl Token {
             action,
             node_update,
             pipeable,
+            subtree_root: None,
         }
     }
 

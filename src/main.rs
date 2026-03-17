@@ -90,11 +90,17 @@ impl Cli {
         if let Some(action) = &token.action {
             match action {
                 Action::ConfigEdit(snode) => {
-                    // Edit configuration & update CLI node if
-                    // necessary.
-                    self.session
-                        .edit_candidate(negate, snode, args)
-                        .map_err(Error::EditConfig)?;
+                    if pcmd.prefix == parser::CommandPrefix::Edit {
+                        // Navigate into the config hierarchy.
+                        self.session
+                            .navigate_edit(snode, args)
+                            .map_err(Error::EditConfig)?;
+                    } else {
+                        // Edit configuration (set/delete).
+                        self.session
+                            .edit_candidate(negate, false, snode, args)
+                            .map_err(Error::EditConfig)?;
+                    }
                 }
                 Action::Callback(callback) => {
                     // Set up output: pipe chain (with

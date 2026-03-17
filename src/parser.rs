@@ -13,9 +13,18 @@ use crate::error::ParserError;
 use crate::session::Session;
 use crate::token::{Commands, TokenKind};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CommandPrefix {
+    None,
+    Set,
+    Delete,
+    Edit,
+}
+
 #[derive(Debug, new)]
 pub struct ParsedCommand {
     pub negate: bool,
+    pub prefix: CommandPrefix,
     pub token_id: NodeId,
     pub args: ParsedArgs,
 }
@@ -50,7 +59,7 @@ fn get_tokens(
 
     // Combine auto-rendered YANG commands and internal commands into
     // a single vector.
-    if add_internal {
+    if add_internal && start_token_id != commands.config_dflt_internal {
         // Add top-level internal commands.
         if start_token_id == commands.config_root_yang {
             tokens.extend(
@@ -99,6 +108,7 @@ pub fn parse_command_try(
     let mut curr_token_id = start_token_id;
     let mut args = ParsedArgs::new();
     let mut negate = false;
+    let mut prefix = CommandPrefix::None;
 
     for (index, word) in line.split_whitespace().enumerate() {
         let first_word = index == 0;
@@ -130,31 +140,46 @@ pub fn parse_command_try(
         };
         let matching_token = commands.get_token(matching_token_id);
 
-        // Check for negation commands.
-        if first_word && matching_token.name == "no" {
-            negate = true;
-        } else {
-            // Check for user-provided arguments.
-            if let Some(argument_name) = &matching_token.argument {
-                let value = match matching_token.kind {
-                    TokenKind::Word => matching_token.name.clone(),
-                    TokenKind::String => word.to_owned(),
-                };
-                args.push_back((argument_name.clone(), value));
+        // Check for subtree delegation (set/edit/delete → YANG tree).
+        if let Some(subtree_root) = matching_token.subtree_root {
+            prefix = match matching_token.name.as_str() {
+                "set" => CommandPrefix::Set,
+                "delete" => CommandPrefix::Delete,
+                "edit" => CommandPrefix::Edit,
+                _ => CommandPrefix::None,
+            };
+            if prefix == CommandPrefix::Delete {
+                negate = true;
             }
-
-            // Update current token ID and proceed to the next word.
-            curr_token_id = matching_token_id;
+            // Switch to YANG tree from current edit point.
+            curr_token_id = if session.mode().is_configure() {
+                session.mode().yang_edit_point(commands)
+            } else {
+                subtree_root
+            };
+            continue;
         }
+
+        // Check for user-provided arguments.
+        if let Some(argument_name) = &matching_token.argument {
+            let value = match matching_token.kind {
+                TokenKind::Word => matching_token.name.clone(),
+                TokenKind::String => word.to_owned(),
+            };
+            args.push_back((argument_name.clone(), value));
+        }
+
+        // Update current token ID and proceed to the next word.
+        curr_token_id = matching_token_id;
     }
 
     // Check if the matched token represents a command.
     if curr_token_id != start_token_id {
         let token = commands.get_token(curr_token_id);
         if token.action.is_some() {
-            Ok(ParsedCommand::new(negate, curr_token_id, args))
+            Ok(ParsedCommand::new(negate, prefix, curr_token_id, args))
         } else {
-            Err(ParserError::Incomplete(curr_token_id))
+            Err(ParserError::Incomplete(curr_token_id, prefix))
         }
     } else {
         let tokens =

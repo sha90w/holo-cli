@@ -202,13 +202,14 @@
     </token>
   </tree>
 
-  <tree name="config">
+  <tree name="config-default">
+    <token name="set" help="Set a configuration parameter." cmd="cmd_set"/>
+    <token name="delete" help="Delete a configuration parameter." cmd="cmd_delete"/>
+    <token name="edit" help="Edit a sub-section of the configuration." cmd="cmd_edit"/>
+    <token name="up" help="Move up one level in the configuration hierarchy." cmd="cmd_up"/>
+    <token name="run" help="Run an operational-mode command." cmd="cmd_run"/>
     <token name="discard" help="Discard staged changes." cmd="cmd_discard"/>
     <token name="validate" help="Validate configuration." cmd="cmd_validate"/>
-  </tree>
-
-  <tree name="config-default">
-    <token name="no" help="Negate a command or set its defaults."/>
     <token name="commit" help="Commit current set of changes." cmd="cmd_commit">
       <token name="comment" help="Assign a comment to this commit.">
         <token name="comment" argument="comment" kind="string" help="Comment for this commit." cmd="cmd_commit"/>
@@ -221,6 +222,9 @@
     <token name="top" help="Return to top-level configuration mode." cmd="cmd_top"/>
     <token name="show" help="Show information about the system.">
       <token name="candidate" argument="configuration" help="Show candidate configuration." cmd="cmd_show_config">
+        <token name="display" help="Display format.">
+          <token name="set" argument="format" help="Display as set commands." cmd="cmd_show_config"/>
+        </token>
         <token name="format" help="Configuration format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
             <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
@@ -231,6 +235,9 @@
         </token>
       </token>
       <token name="running" argument="configuration" help="Show running configuration." cmd="cmd_show_config">
+        <token name="display" help="Display format.">
+          <token name="set" argument="format" help="Display as set commands." cmd="cmd_show_config"/>
+        </token>
         <token name="with-defaults" argument="with-defaults" help="Show default values." cmd="cmd_show_config"/>
         <token name="format" help="Configuration format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_config">
@@ -241,8 +248,7 @@
           </token>
         </token>
       </token>
-      <token name="changes" help="Show configuration changes." cmd="cmd_show_config_changes">
-      </token>
+      <token name="compare" help="Show configuration changes." cmd="cmd_show_config_compare"/>
     </token>
   </tree>
 </cli>

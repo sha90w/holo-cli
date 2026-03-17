@@ -6,6 +6,7 @@
 
 use indextree::NodeId;
 
+use crate::parser::CommandPrefix;
 use crate::pipe::PipeError;
 
 #[derive(Debug)]
@@ -21,7 +22,7 @@ pub enum Error {
 #[derive(Debug)]
 pub enum ParserError {
     NoMatch(String),
-    Incomplete(NodeId),
+    Incomplete(NodeId, CommandPrefix),
     Ambiguous(Vec<NodeId>),
 }
 
@@ -66,7 +67,7 @@ impl std::fmt::Display for ParserError {
             ParserError::NoMatch(command) => {
                 write!(f, "unknown command: {}", command)
             }
-            ParserError::Incomplete(_) => write!(f, "incomplete command"),
+            ParserError::Incomplete(..) => write!(f, "incomplete command"),
             ParserError::Ambiguous(_) => write!(f, "ambiguous command"),
         }
     }

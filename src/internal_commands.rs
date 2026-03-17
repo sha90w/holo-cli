@@ -440,6 +440,61 @@ pub fn cmd_top(
     Ok(false)
 }
 
+// ===== "set" =====
+
+pub fn cmd_set(
+    _commands: &Commands,
+    _session: &mut Session,
+    _args: ParsedArgs,
+) -> Result<bool, CallbackError> {
+    println!("% set not yet implemented");
+    Ok(false)
+}
+
+// ===== "delete" =====
+
+pub fn cmd_delete(
+    _commands: &Commands,
+    _session: &mut Session,
+    _args: ParsedArgs,
+) -> Result<bool, CallbackError> {
+    println!("% delete not yet implemented");
+    Ok(false)
+}
+
+// ===== "edit" =====
+
+pub fn cmd_edit(
+    _commands: &Commands,
+    _session: &mut Session,
+    _args: ParsedArgs,
+) -> Result<bool, CallbackError> {
+    println!("% edit not yet implemented");
+    Ok(false)
+}
+
+// ===== "up" =====
+
+pub fn cmd_up(
+    _commands: &Commands,
+    session: &mut Session,
+    _args: ParsedArgs,
+) -> Result<bool, CallbackError> {
+    session.mode_config_exit();
+    Ok(false)
+}
+
+// ===== "run" =====
+
+pub fn cmd_run(
+    _commands: &Commands,
+    _session: &mut Session,
+    _args: ParsedArgs,
+) -> Result<bool, CallbackError> {
+    println!("% run not yet implemented");
+    Ok(false)
+}
+
 // ===== "discard" =====
 
 pub fn cmd_discard(
@@ -493,69 +548,173 @@ pub fn cmd_validate(
 fn cmd_show_config_cmds(
     config: &DataTree<'static>,
     with_defaults: bool,
+    scope: Option<&str>,
 ) -> String {
     let mut output = String::new();
-
-    // Iterate over data nodes that represent full commands.
-    for dnode in config
-        .traverse()
-        .filter(|dnode| {
-            let snode = dnode.schema();
-            match snode.kind() {
-                SchemaNodeKind::Container => !snode.is_np_container(),
-                SchemaNodeKind::Leaf => !snode.is_list_key(),
-                SchemaNodeKind::LeafList => true,
-                SchemaNodeKind::List => true,
-                _ => false,
-            }
-        })
-        .filter(|dnode| with_defaults || !dnode.is_default())
-    {
-        let mut tokens = vec![];
-
-        // Indentation.
-        let mut indent = String::new();
-        for _ in dnode
-            .ancestors()
-            .filter(|dnode| dnode.schema().kind() == SchemaNodeKind::List)
-        {
-            write!(indent, " ").unwrap();
-        }
-
-        // Build command line.
-        for dnode in dnode
-            .inclusive_ancestors()
-            .take_while(|iter| {
-                if *iter == dnode {
-                    return true;
-                }
-                let snode = iter.schema();
-                snode.kind() != SchemaNodeKind::List
-            })
-            .collect::<Vec<DataNodeRef<'_>>>()
-            .iter()
-            .rev()
-        {
-            tokens.push(dnode.schema().name().to_owned());
-            for dnode in dnode.list_keys() {
-                tokens.push(dnode.value_canonical().unwrap());
-            }
-            if let Some(value) = dnode.value_canonical() {
-                tokens.push(value.clone());
-            }
-        }
-
-        // Print command.
-        if dnode.schema().kind() == SchemaNodeKind::List {
-            writeln!(output, "{}!", indent).unwrap();
-        }
-        writeln!(output, "{}{}", indent, tokens.join(" ")).unwrap();
+    let top_nodes: Vec<DataNodeRef<'_>> = match scope {
+        Some(path) => config
+            .find_path(path)
+            .ok()
+            .into_iter()
+            .flat_map(|n| n.children())
+            .collect(),
+        None => config
+            .reference()
+            .into_iter()
+            .flat_map(|r| r.inclusive_siblings())
+            .collect(),
+    };
+    for dnode in top_nodes.iter().filter(|d| {
+        !d.schema().is_schema_only() && (with_defaults || !d.is_default())
+    }) {
+        format_config_node(dnode, 0, with_defaults, &mut output);
     }
-
-    // Footer.
-    writeln!(output, "!").unwrap();
-
     output
+}
+
+fn format_config_node(
+    dnode: &DataNodeRef<'_>,
+    indent: usize,
+    with_defaults: bool,
+    output: &mut String,
+) {
+    let snode = dnode.schema();
+    let pad = " ".repeat(indent);
+    match snode.kind() {
+        SchemaNodeKind::Container => {
+            if snode.is_np_container() {
+                // Non-presence container — recurse without braces.
+                for child in dnode.children().filter(|d| {
+                    !d.schema().is_schema_only()
+                        && (with_defaults || !d.is_default())
+                }) {
+                    format_config_node(&child, indent, with_defaults, output);
+                }
+            } else {
+                writeln!(output, "{}{} {{", pad, snode.name()).unwrap();
+                for child in dnode.children().filter(|d| {
+                    !d.schema().is_schema_only()
+                        && (with_defaults || !d.is_default())
+                }) {
+                    format_config_node(
+                        &child,
+                        indent + 4,
+                        with_defaults,
+                        output,
+                    );
+                }
+                writeln!(output, "{}}}", pad).unwrap();
+            }
+        }
+        SchemaNodeKind::List => {
+            let keys: Vec<String> = dnode
+                .list_keys()
+                .map(|k| k.value_canonical().unwrap())
+                .collect();
+            writeln!(output, "{}{} {} {{", pad, snode.name(), keys.join(" "))
+                .unwrap();
+            for child in dnode.children().filter(|d| {
+                !d.schema().is_schema_only()
+                    && !d.schema().is_list_key()
+                    && (with_defaults || !d.is_default())
+            }) {
+                format_config_node(&child, indent + 4, with_defaults, output);
+            }
+            writeln!(output, "{}}}", pad).unwrap();
+        }
+        SchemaNodeKind::Leaf if !snode.is_list_key() => {
+            if let Some(value) = dnode.value_canonical() {
+                writeln!(output, "{}{} {};", pad, snode.name(), value).unwrap();
+            }
+        }
+        SchemaNodeKind::LeafList => {
+            if let Some(value) = dnode.value_canonical() {
+                writeln!(output, "{}{} {};", pad, snode.name(), value).unwrap();
+            }
+        }
+        _ => {}
+    }
+}
+
+fn cmd_show_config_set(
+    config: &DataTree<'static>,
+    with_defaults: bool,
+    scope: Option<&str>,
+) -> String {
+    let mut output = String::new();
+    let top_nodes: Vec<DataNodeRef<'_>> = match scope {
+        Some(path) => config
+            .find_path(path)
+            .ok()
+            .into_iter()
+            .flat_map(|n| n.children())
+            .collect(),
+        None => config
+            .reference()
+            .into_iter()
+            .flat_map(|r| r.inclusive_siblings())
+            .collect(),
+    };
+    for dnode in top_nodes.iter().filter(|d| {
+        !d.schema().is_schema_only() && (with_defaults || !d.is_default())
+    }) {
+        format_set_node(dnode, String::new(), with_defaults, &mut output);
+    }
+    output
+}
+
+fn format_set_node(
+    dnode: &DataNodeRef<'_>,
+    prefix: String,
+    with_defaults: bool,
+    output: &mut String,
+) {
+    let snode = dnode.schema();
+    let name = snode.name();
+    match snode.kind() {
+        SchemaNodeKind::Container => {
+            let path = if prefix.is_empty() {
+                name.to_owned()
+            } else {
+                format!("{} {}", prefix, name)
+            };
+            for child in dnode.children().filter(|d| {
+                !d.schema().is_schema_only()
+                    && (with_defaults || !d.is_default())
+            }) {
+                format_set_node(&child, path.clone(), with_defaults, output);
+            }
+        }
+        SchemaNodeKind::List => {
+            let keys: Vec<String> = dnode
+                .list_keys()
+                .map(|k| k.value_canonical().unwrap())
+                .collect();
+            let path = if prefix.is_empty() {
+                format!("{} {}", name, keys.join(" "))
+            } else {
+                format!("{} {} {}", prefix, name, keys.join(" "))
+            };
+            for child in dnode.children().filter(|d| {
+                !d.schema().is_schema_only()
+                    && !d.schema().is_list_key()
+                    && (with_defaults || !d.is_default())
+            }) {
+                format_set_node(&child, path.clone(), with_defaults, output);
+            }
+        }
+        SchemaNodeKind::Leaf if !snode.is_list_key() => {
+            if let Some(value) = dnode.value_canonical() {
+                writeln!(output, "set {} {} {}", prefix, name, value).unwrap();
+            }
+        }
+        SchemaNodeKind::LeafList => {
+            if let Some(value) = dnode.value_canonical() {
+                writeln!(output, "set {} {} {}", prefix, name, value).unwrap();
+            }
+        }
+        _ => {}
+    }
 }
 
 fn cmd_show_config_yang(
@@ -589,7 +748,8 @@ pub fn cmd_show_config(
     let with_defaults = get_opt_arg(&mut args, "with-defaults").is_some();
     let format = get_opt_arg(&mut args, "format");
 
-    // Get configuration.
+    // Get configuration and current edit scope.
+    let scope = session.mode().data_path();
     let config = session.get_configuration(config_type);
 
     // Display configuration.
@@ -600,23 +760,27 @@ pub fn cmd_show_config(
         Some("xml") => {
             cmd_show_config_yang(config, DataFormat::XML, with_defaults)?
         }
+        Some("set") => {
+            cmd_show_config_set(config, with_defaults, scope.as_deref())
+        }
         Some(_) => panic!("unknown format"),
-        None => cmd_show_config_cmds(config, with_defaults),
+        None => cmd_show_config_cmds(config, with_defaults, scope.as_deref()),
     };
     write_output(session, &data)?;
 
     Ok(false)
 }
 
-pub fn cmd_show_config_changes(
+pub fn cmd_show_config_compare(
     _commands: &Commands,
     session: &mut Session,
     _args: ParsedArgs,
 ) -> Result<bool, CallbackError> {
+    let scope = session.mode().data_path();
     let running = session.get_configuration(ConfigurationType::Running);
-    let running = cmd_show_config_cmds(running, false);
+    let running = cmd_show_config_cmds(running, false, scope.as_deref());
     let candidate = session.get_configuration(ConfigurationType::Candidate);
-    let candidate = cmd_show_config_cmds(candidate, false);
+    let candidate = cmd_show_config_cmds(candidate, false, scope.as_deref());
 
     let diff = TextDiff::from_lines(&running, &candidate);
     print!(
