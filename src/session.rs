@@ -272,7 +272,18 @@ impl Session {
         // Edit the candidate configuration.
         let candidate = self.candidate.as_mut().unwrap();
         if negate {
-            if candidate.find_path(&path).is_ok() {
+            if let Ok(dnode) = candidate.find_path(&path) {
+                if let Some(ref expected) = value {
+                    let current =
+                        dnode.value_canonical().unwrap_or_default();
+                    if current != *expected {
+                        println!(
+                            "% Delete failed: value \"{expected}\" \
+                             does not match current configuration"
+                        );
+                        return Ok(());
+                    }
+                }
                 candidate.remove(&path)?;
             }
         } else {
