@@ -23,16 +23,18 @@
               <token name="json" argument="format" help="JSON output format." cmd="cmd_show_state"/>
 	          <token name="xml" argument="format" help="XML output format." cmd="cmd_show_state"/>
             </token>
-  	        <token name="depth" argument="depth" kind="string" help="Max depth YANG tree traversal" cmd="cmd_show_state"/>
-  	        <token name="exclude" argument="depth" kind="string" help="YANG node names to exclude from response node1,node2,..." cmd="cmd_show_state"/>
           </token>
         </token>
         <token name="format" help="Data format.">
           <token name="json" argument="format" help="JSON output format." cmd="cmd_show_state"/>
           <token name="xml" argument="format" help="XML output format." cmd="cmd_show_state"/>
         </token>
-  	    <token name="depth" argument="depth" kind="string" help="Max depth YANG tree traversal" cmd="cmd_show_state"/>
-  	    <token name="exclude" argument="depth" kind="string" help="YANG node names to exclude from response node1,node2,..." cmd="cmd_show_state"/>
+        <token name="depth" help="Max depth YANG tree traversal">
+  	        <token name="depth" argument="depth" kind="string" cmd="cmd_show_state"/>
+        </token>
+        <token name="exclude" help="YANG node names to exclude from response node1,node2,...">
+  	        <token name="exclude" argument="exclude" kind="string" cmd="cmd_show_state"/>
+        </token>
       </token>
       <token name="yang" help="YANG information.">
         <token name="modules" help="Show loaded YANG modules." cmd="cmd_show_yang_modules"/>
