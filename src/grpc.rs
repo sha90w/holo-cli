@@ -100,6 +100,8 @@ impl GrpcClient {
         format: DataFormat,
         with_defaults: bool,
         xpath: Option<String>,
+        max_depth: u32,
+        exclude: &[String],
     ) -> Result<proto::data_tree::Data, Error> {
         let data = self
             .rpc_sync_get(proto::GetRequest {
@@ -107,6 +109,8 @@ impl GrpcClient {
                 encoding: proto::Encoding::from(format) as i32,
                 with_defaults,
                 path: xpath.unwrap_or_default(),
+                max_depth,
+                exclude: exclude.to_vec(),
             })
             .map_err(Error::Backend)?
             .into_inner()

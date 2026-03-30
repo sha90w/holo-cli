@@ -266,7 +266,7 @@ fn fetch_data(
     let yang_ctx = YANG_CTX.get().unwrap();
     let data_format = DataFormat::LYB;
     let data = session
-        .get(data_type, data_format, true, Some(xpath.to_owned()))
+        .get(data_type, data_format, true, Some(xpath.to_owned()), 0, &[])
         .map_err(|error| format!("% failed to fetch state data: {}", error))?;
     DataTree::parse_string(
         yang_ctx,
@@ -638,6 +638,13 @@ pub fn cmd_show_state(
 ) -> Result<bool, CallbackError> {
     let xpath = get_opt_arg(&mut args, "xpath");
     let format = get_opt_arg(&mut args, "format");
+    let max_depth = get_opt_arg(&mut args, "depth")
+        .and_then(|d| d.parse::<u32>().ok())
+        .unwrap_or_default();
+    let exclude = get_opt_arg(&mut args, "exclude").unwrap_or_default();
+    let exclude: Vec<String> =
+        exclude.split(',').map(|s| s.to_string()).collect();
+
     let format = match format.as_deref() {
         Some("json") => DataFormat::JSON,
         Some("xml") => DataFormat::XML,
@@ -645,8 +652,14 @@ pub fn cmd_show_state(
         None => DataFormat::JSON,
     };
 
-    match session.get(proto::get_request::DataType::State, format, false, xpath)
-    {
+    match session.get(
+        proto::get_request::DataType::State,
+        format,
+        false,
+        xpath,
+        max_depth,
+        &exclude,
+    ) {
         Ok(proto::data_tree::Data::DataString(data)) => {
             write_output(session, &data)?;
         }
