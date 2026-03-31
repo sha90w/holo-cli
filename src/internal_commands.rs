@@ -2049,6 +2049,7 @@ pub fn cmd_show_bgp_summary(
 
     YangTableBuilder::new(session, proto::get_request::DataType::All)
         .xpath(XPATH_PROTOCOL)
+        .exclude(&["ietf-bgp:rib".to_string()])
         .filter_list_key("type", Some(PROTOCOL_BGP))
         .column_leaf("Instance", "name")
         .xpath(XPATH_BGP_NEIGHBOR)
