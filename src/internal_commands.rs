@@ -32,6 +32,8 @@ struct YangTableBuilder<'a> {
     session: &'a mut Session,
     data_type: proto::get_request::DataType,
     paths: Vec<(String, Vec<YangTableColumn>)>,
+    max_depth: u32,
+    exclude: &'a [String],
 }
 
 struct YangTableColumn {
@@ -62,6 +64,8 @@ impl<'a> YangTableBuilder<'a> {
             session,
             data_type,
             paths: Vec::new(),
+            max_depth: 0,
+            exclude: &[],
         }
     }
 
@@ -81,6 +85,18 @@ impl<'a> YangTableBuilder<'a> {
         {
             *xpath = format!("{}[{}='{}']", xpath, key, value.as_ref());
         }
+        self
+    }
+
+    // Sets the maximum depth for the fetch operation.
+    pub fn max_depth(mut self, depth: u32) -> Self {
+        self.max_depth = depth;
+        self
+    }
+
+    // Sets the exclude list for the fetch operation.
+    pub fn exclude(mut self, exclude: &'a [String]) -> Self {
+        self.exclude = exclude;
         self
     }
 
@@ -202,7 +218,13 @@ impl<'a> YangTableBuilder<'a> {
         let xpath_req = "/ietf-routing:routing/control-plane-protocols";
 
         // Fetch data.
-        let data = fetch_data(self.session, self.data_type, xpath_req)?;
+        let data = fetch_data_filtered(
+            self.session,
+            self.data_type,
+            xpath_req,
+            self.max_depth,
+            self.exclude,
+        )?;
         let Some(dnode) = data.reference() else {
             return Ok(());
         };
@@ -258,15 +280,24 @@ fn write_output(
     Ok(())
 }
 
-fn fetch_data(
+fn fetch_data_filtered(
     session: &mut Session,
     data_type: proto::get_request::DataType,
     xpath: &str,
+    depth: u32,
+    exclude: &[String],
 ) -> Result<DataTree<'static>, String> {
     let yang_ctx = YANG_CTX.get().unwrap();
     let data_format = DataFormat::LYB;
     let data = session
-        .get(data_type, data_format, true, Some(xpath.to_owned()), 0, &[])
+        .get(
+            data_type,
+            data_format,
+            true,
+            Some(xpath.to_owned()),
+            depth,
+            exclude,
+        )
         .map_err(|error| format!("% failed to fetch state data: {}", error))?;
     DataTree::parse_string(
         yang_ctx,
@@ -276,6 +307,15 @@ fn fetch_data(
         DataValidationFlags::PRESENT,
     )
     .map_err(|error| format!("% failed to parse data: {}", error))
+}
+
+#[inline]
+fn fetch_data(
+    session: &mut Session,
+    data_type: proto::get_request::DataType,
+    xpath: &str,
+) -> Result<DataTree<'static>, String> {
+    fetch_data_filtered(session, data_type, xpath, 0, &[])
 }
 
 // ===== impl DataNodeRef =====
