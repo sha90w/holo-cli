@@ -28,12 +28,17 @@ const XPATH_PROTOCOL: &str =
     "/ietf-routing:routing/control-plane-protocols/control-plane-protocol";
 const XPATH_RIB: &str = "/ietf-routing:routing/ribs/rib";
 
+/// Excluded from all YangTableBuilder queries by default for
+/// performance — BGP RIBs are large sub-trees that slow down
+/// unrelated show commands.
+const DEFAULT_EXCLUDES: &[&str] = &["ietf-bgp:rib"];
+
 struct YangTableBuilder<'a> {
     session: &'a mut Session,
     data_type: proto::get_request::DataType,
     paths: Vec<(String, Vec<YangTableColumn>)>,
     max_depth: u32,
-    exclude: &'a [String],
+    exclude: Vec<String>,
 }
 
 struct YangTableColumn {
@@ -65,7 +70,10 @@ impl<'a> YangTableBuilder<'a> {
             data_type,
             paths: Vec::new(),
             max_depth: 0,
-            exclude: &[],
+            exclude: DEFAULT_EXCLUDES
+                .iter()
+                .map(|s| s.to_string())
+                .collect(),
         }
     }
 
@@ -94,9 +102,9 @@ impl<'a> YangTableBuilder<'a> {
         self
     }
 
-    // Sets the exclude list for the fetch operation.
-    pub fn exclude(mut self, exclude: &'a [String]) -> Self {
-        self.exclude = exclude;
+    // Adds a YANG node name to the exclude list.
+    pub fn exclude(mut self, name: &str) -> Self {
+        self.exclude.push(name.to_string());
         self
     }
 
@@ -223,7 +231,7 @@ impl<'a> YangTableBuilder<'a> {
             self.data_type,
             xpath_req,
             self.max_depth,
-            self.exclude,
+            &self.exclude,
         )?;
         let Some(dnode) = data.reference() else {
             return Ok(());
@@ -2049,7 +2057,6 @@ pub fn cmd_show_bgp_summary(
 
     YangTableBuilder::new(session, proto::get_request::DataType::All)
         .xpath(XPATH_PROTOCOL)
-        .exclude(&["ietf-bgp:rib".to_string()])
         .filter_list_key("type", Some(PROTOCOL_BGP))
         .column_leaf("Instance", "name")
         .xpath(XPATH_BGP_NEIGHBOR)
