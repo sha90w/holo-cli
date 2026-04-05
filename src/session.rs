@@ -13,7 +13,7 @@ use yang4::data::{
 use yang4::schema::{SchemaNode, SchemaNodeKind};
 
 use crate::error::Error;
-use crate::grpc::{GrpcClient, proto};
+use crate::grpc::{GrpcClient, StreamGetIter, proto};
 use crate::parser::ParsedArgs;
 use crate::token::Commands;
 use crate::{YANG_CTX, token_yang};
@@ -327,6 +327,17 @@ impl Session {
             max_depth,
             exclude,
         )
+    }
+
+    pub fn stream_get(
+        &mut self,
+        data_type: proto::get_request::DataType,
+        xpath: Option<String>,
+        max_depth: u32,
+        exclude: &[String],
+    ) -> Result<StreamGetIter, Error> {
+        self.grpc_client
+            .stream_get(data_type, xpath, max_depth, exclude)
     }
 
     pub fn execute(

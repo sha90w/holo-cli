@@ -70,10 +70,7 @@ impl<'a> YangTableBuilder<'a> {
             data_type,
             paths: Vec::new(),
             max_depth: 0,
-            exclude: DEFAULT_EXCLUDES
-                .iter()
-                .map(|s| s.to_string())
-                .collect(),
+            exclude: DEFAULT_EXCLUDES.iter().map(|s| s.to_string()).collect(),
         }
     }
 
@@ -2193,10 +2190,18 @@ pub fn cmd_show_bgp_neighbor(
         rt_type
     );
 
-    let data =
-        fetch_data(session, proto::get_request::DataType::State, &xpath_req)?;
-
+    let yang_ctx = YANG_CTX.get().unwrap();
+    let data_format = DataFormat::LYB;
     let xpath_routes = format!("{}/route", &xpath_req);
+
+    let stream = session
+        .stream_get(
+            proto::get_request::DataType::State,
+            Some(xpath_req),
+            0,
+            &[],
+        )
+        .map_err(|e| format!("% failed to fetch state data: {}", e))?;
 
     let output = session.writer();
 
@@ -2207,11 +2212,22 @@ pub fn cmd_show_bgp_neighbor(
         "Prefix", "NextHop", "MED", "LocalPref"
     )
     .unwrap();
-    for route in data.find_xpath(&xpath_routes).unwrap() {
-        let prefix = route.child_opt_value("prefix").unwrap();
-        let index = route.child_opt_value("attr-index").unwrap();
-        let route_attrs = attrs.get(&index).unwrap();
-        writeln!(output, "{:>20} {}", prefix, route_attrs)?;
+    for entry in stream {
+        let data = entry.map_err(|e| format!("% stream error: {}", e))?;
+        let dtree = DataTree::parse_string(
+            yang_ctx,
+            data.as_bytes().unwrap(),
+            data_format,
+            DataParserFlags::NO_VALIDATION,
+            DataValidationFlags::PRESENT,
+        )
+        .map_err(|e| format!("% failed to parse data: {}", e))?;
+        for route in dtree.find_xpath(&xpath_routes).unwrap() {
+            let prefix = route.child_opt_value("prefix").unwrap();
+            let index = route.child_opt_value("attr-index").unwrap();
+            let route_attrs = attrs.get(&index).unwrap();
+            writeln!(output, "{:>20} {}", prefix, route_attrs)?;
+        }
     }
 
     Ok(false)

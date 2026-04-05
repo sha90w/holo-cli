@@ -32,6 +32,26 @@ pub struct GrpcClient {
     runtime: tokio::runtime::Runtime,
 }
 
+pub struct StreamGetIter {
+    stream: tonic::Streaming<proto::GetResponse>,
+    runtime: tokio::runtime::Handle,
+}
+
+impl Iterator for StreamGetIter {
+    type Item = Result<proto::data_tree::Data, Error>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        match self.runtime.block_on(self.stream.message()) {
+            Ok(Some(response)) => {
+                let data = response.data?.data?;
+                Some(Ok(data))
+            }
+            Ok(None) => None,
+            Err(status) => Some(Err(Error::Backend(status))),
+        }
+    }
+}
+
 // ===== impl GrpcClient =====
 
 impl GrpcClient {
@@ -154,6 +174,30 @@ impl GrpcClient {
         Ok(())
     }
 
+    pub fn stream_get(
+        &mut self,
+        data_type: proto::get_request::DataType,
+        xpath: Option<String>,
+        max_depth: u32,
+        exclude: &[String],
+    ) -> Result<StreamGetIter, Error> {
+        let stream = self
+            .rpc_sync_stream_get(proto::GetRequest {
+                r#type: data_type as i32,
+                encoding: proto::Encoding::Lyb as i32,
+                with_defaults: true,
+                path: xpath.unwrap_or_default(),
+                max_depth,
+                exclude: exclude.to_vec(),
+            })
+            .map_err(Error::Backend)?
+            .into_inner();
+        Ok(StreamGetIter {
+            stream,
+            runtime: self.runtime.handle().clone(),
+        })
+    }
+
     pub fn execute(
         &mut self,
         data: DataTree<'static>,
@@ -191,6 +235,17 @@ impl GrpcClient {
     ) -> Result<tonic::Response<proto::GetResponse>, tonic::Status> {
         let request = tonic::Request::new(request);
         self.runtime.block_on(self.client.get(request))
+    }
+
+    fn rpc_sync_stream_get(
+        &mut self,
+        request: proto::GetRequest,
+    ) -> Result<
+        tonic::Response<tonic::Streaming<proto::GetResponse>>,
+        tonic::Status,
+    > {
+        let request = tonic::Request::new(request);
+        self.runtime.block_on(self.client.stream_get(request))
     }
 
     fn rpc_sync_commit(
