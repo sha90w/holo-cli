@@ -2197,7 +2197,7 @@ pub fn cmd_show_bgp_neighbor(
     let stream = session
         .stream_get(
             proto::get_request::DataType::State,
-            Some(xpath_req),
+            Some(xpath_routes.clone()),
             0,
             &[],
         )
