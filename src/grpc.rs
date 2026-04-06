@@ -57,7 +57,15 @@ impl Iterator for StreamGetIter {
 impl GrpcClient {
     pub fn connect(dest: &'static str) -> Result<Self, StdError> {
         // Initialize tokio runtime.
-        let runtime = tokio::runtime::Builder::new_current_thread()
+        //
+        // A multi-thread runtime is required so that the IO driver runs
+        // on a background worker thread.  This allows Handle::block_on
+        // (used by StreamGetIter) to make progress on HTTP/2 frames
+        // while the calling thread is parked.  With a current_thread
+        // runtime, Handle::block_on cannot drive IO and streaming RPCs
+        // hang indefinitely.
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
             .enable_all()
             .build()
             .expect("Failed to obtain a new runtime object");
