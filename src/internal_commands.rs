@@ -2102,56 +2102,80 @@ pub fn cmd_show_bgp_summary(
 fn bgp_get_attrs(
     session: &mut Session,
 ) -> Result<BTreeMap<String, String>, String> {
+    let yang_ctx = YANG_CTX.get().unwrap();
+    let data_format = DataFormat::LYB;
     let xpath = format!(
-        "{}[type='{}'][name='{}']/{}",
+        "{}[type='{}'][name='{}']/{}/attr-set",
         XPATH_PROTOCOL, PROTOCOL_BGP, "main", XPATH_BGP_RIB_ATTR_SET
     );
 
-    let data =
-        fetch_data(session, proto::get_request::DataType::State, &xpath)?;
+    let stream = session
+        .stream_get(
+            proto::get_request::DataType::State,
+            Some(xpath.clone()),
+            0,
+            &[],
+        )
+        .map_err(|e| format!("% failed to fetch state data: {}", e))?;
 
-    let attributes = data
-        .find_path(&xpath)
-        .unwrap()
-        .find_xpath("attr-set")
-        .unwrap()
-        .map(|dnode| {
-            let index = dnode.child_value("index");
-            let attrs = dnode.find_path("attributes").unwrap();
+    let mut attributes = BTreeMap::new();
 
-            let nexthop =
-                attrs.child_opt_value("next-hop").unwrap_or("-".to_owned());
-            let med = attrs.child_opt_value("med").unwrap_or("-".to_owned());
-            let origin = match attrs.child_opt_value("origin").as_deref() {
-                Some("incomplete") => "?",
-                Some("igp") => "I",
-                Some("egp") => "E",
-                Some(origin) => origin,
-                None => "",
-            }
-            .to_owned();
+    for entry in stream {
+        let data = entry.map_err(|e| format!("% stream error: {}", e))?;
+        let dtree = DataTree::parse_string(
+            yang_ctx,
+            data.as_bytes().unwrap(),
+            data_format,
+            DataParserFlags::NO_VALIDATION,
+            DataValidationFlags::PRESENT,
+        )
+        .map_err(|e| format!("% failed to parse data: {}", e))?;
 
-            let lclpref = attrs
-                .child_opt_value("local-pref")
-                .unwrap_or("-".to_owned());
-
-            let as_path = attrs
-                .find_xpath("as-path/segment/member")
+        attributes.extend(
+            dtree
+                .find_xpath(&xpath)
                 .unwrap()
-                .filter_map(|member| member.value_canonical())
-                .collect::<Vec<String>>()
-                .join(" ");
+                .map(|dnode| {
+                    let index = dnode.child_value("index");
+                    let attrs = dnode.find_path("attributes").unwrap();
 
-            (
-                index,
-                format!(
-                    "{:>20} {:>5} {:>9} {} {}",
-                    nexthop, med, lclpref, as_path, origin
-                ),
-            )
-        })
-        .collect();
+                    let nexthop = attrs
+                        .child_opt_value("next-hop")
+                        .unwrap_or("-".to_owned());
+                    let med =
+                        attrs.child_opt_value("med").unwrap_or("-".to_owned());
+                    let origin =
+                        match attrs.child_opt_value("origin").as_deref() {
+                            Some("incomplete") => "?",
+                            Some("igp") => "I",
+                            Some("egp") => "E",
+                            Some(origin) => origin,
+                            None => "",
+                        }
+                        .to_owned();
 
+                    let lclpref = attrs
+                        .child_opt_value("local-pref")
+                        .unwrap_or("-".to_owned());
+
+                    let as_path = attrs
+                        .find_xpath("as-path/segment/member")
+                        .unwrap()
+                        .filter_map(|member| member.value_canonical())
+                        .collect::<Vec<String>>()
+                        .join(" ");
+
+                    (
+                        index,
+                        format!(
+                            "{:>20} {:>5} {:>9} {} {}",
+                            nexthop, med, lclpref, as_path, origin
+                        ),
+                    )
+                })
+                .collect::<BTreeMap<String, String>>(),
+        );
+    }
     Ok(attributes)
 }
 
