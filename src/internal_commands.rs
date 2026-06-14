@@ -13,7 +13,7 @@ use prettytable::{Table, format, row};
 use similar::TextDiff;
 use yang5::data::{
     Data, DataFormat, DataNodeRef, DataOperation, DataParserFlags,
-    DataPrinterFlags, DataTree, DataValidationFlags,
+    DataPrinterFlags, DataTree,
 };
 use yang5::schema::SchemaNodeKind;
 
@@ -263,19 +263,9 @@ fn fetch_data(
     data_type: proto::get_request::DataType,
     xpath: &str,
 ) -> Result<DataTree<'static>, String> {
-    let yang_ctx = YANG_CTX.get().unwrap();
-    let data_format = DataFormat::LYB;
-    let data = session
-        .get(data_type, data_format, true, Some(xpath.to_owned()))
-        .map_err(|error| format!("% failed to fetch state data: {}", error))?;
-    DataTree::parse_string(
-        yang_ctx,
-        data.as_bytes().unwrap(),
-        data_format,
-        DataParserFlags::NO_VALIDATION,
-        DataValidationFlags::PRESENT,
-    )
-    .map_err(|error| format!("% failed to parse data: {}", error))
+    session
+        .get(data_type, DataFormat::LYB, true, Some(xpath.to_owned()))
+        .map_err(|error| format!("% failed to fetch state data: {}", error))
 }
 
 // ===== impl DataNodeRef =====
@@ -647,10 +637,12 @@ pub fn cmd_show_state(
 
     match session.get(proto::get_request::DataType::State, format, false, xpath)
     {
-        Ok(proto::data_tree::Data::DataString(data)) => {
+        Ok(data) => {
+            let data = data
+                .print_string(format, DataPrinterFlags::WITH_SIBLINGS)
+                .expect("Failed to encode data tree");
             write_output(session, &data)?;
         }
-        Ok(proto::data_tree::Data::DataBytes(_)) => unreachable!(),
         Err(error) => println!("% failed to fetch state data: {}", error),
     }
 

@@ -13,6 +13,7 @@ pub enum Error {
     Parser(ParserError),
     EditConfig(yang5::Error),
     ValidateConfig(yang5::Error),
+    ParseData(yang5::Error),
     Callback(CallbackError),
     Backend(tonic::Status),
     Pipe(PipeError),
@@ -42,6 +43,9 @@ impl std::fmt::Display for Error {
             }
             Error::ValidateConfig(error) => {
                 write!(f, "failed to validate configuration: {}", error)
+            }
+            Error::ParseData(error) => {
+                write!(f, "failed to parse data: {}", error)
             }
             Error::Callback(error) => {
                 write!(f, "failed to execute command: {}", error)

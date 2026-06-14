@@ -10,12 +10,13 @@ use std::os::raw::{c_char, c_void};
 
 use proto::northbound_client::NorthboundClient;
 use yang5::data::{
-    Data, DataDiffFlags, DataFormat, DataPrinterFlags, DataTree,
+    Data, DataDiffFlags, DataFormat, DataParserFlags, DataPrinterFlags,
+    DataTree, DataValidationFlags,
 };
 use yang5::ffi;
 
-use crate::YANG_MODULES_DIR;
 use crate::error::Error;
+use crate::{YANG_CTX, YANG_MODULES_DIR};
 
 pub mod proto {
     tonic::include_proto!("holo");
@@ -95,15 +96,22 @@ impl GrpcClient {
         }
     }
 
+    // Retrieves data from the daemon.
+    //
+    // The `Get` RPC is server-streaming: the response arrives as a sequence of
+    // independent, self-contained fragments (each a complete YANG document with
+    // its full ancestor spine). The fragments are merged into a single data
+    // tree, holding at most one fragment in memory at a time.
     pub fn get(
         &mut self,
         data_type: proto::get_request::DataType,
         format: DataFormat,
         with_defaults: bool,
         xpath: Option<String>,
-    ) -> Result<proto::data_tree::Data, Error> {
+    ) -> Result<DataTree<'static>, Error> {
+        let yang_ctx = YANG_CTX.get().unwrap();
         let path = xpath.map(|x| proto::Path::from_xpath(&x));
-        let data = self
+        let mut stream = self
             .rpc_sync_get(proto::GetRequest {
                 r#type: data_type as i32,
                 encoding: proto::Encoding::from(format) as i32,
@@ -111,10 +119,25 @@ impl GrpcClient {
                 path,
             })
             .map_err(Error::Backend)?
-            .into_inner()
-            .data
-            .unwrap();
-        Ok(data.data.unwrap())
+            .into_inner();
+
+        let mut dtree = DataTree::new(yang_ctx);
+        while let Some(response) = self
+            .runtime
+            .block_on(stream.message())
+            .map_err(Error::Backend)?
+        {
+            let Some(fragment) = response
+                .data
+                .and_then(|data| data.data)
+                .map(|data| parse_fragment(yang_ctx, format, &data))
+                .transpose()?
+            else {
+                continue;
+            };
+            dtree.merge(&fragment).expect("Failed to merge fragment");
+        }
+        Ok(dtree)
     }
 
     pub fn validate_candidate(
@@ -186,7 +209,10 @@ impl GrpcClient {
     fn rpc_sync_get(
         &mut self,
         request: proto::GetRequest,
-    ) -> Result<tonic::Response<proto::GetResponse>, tonic::Status> {
+    ) -> Result<
+        tonic::Response<tonic::Streaming<proto::GetResponse>>,
+        tonic::Status,
+    > {
         let request = tonic::Request::new(request);
         self.runtime.block_on(self.client.get(request))
     }
@@ -213,18 +239,6 @@ impl GrpcClient {
     ) -> Result<tonic::Response<proto::ExecuteResponse>, tonic::Status> {
         let request = tonic::Request::new(request);
         self.runtime.block_on(self.client.execute(request))
-    }
-}
-
-// ===== impl proto::data_tree::Data =====
-
-impl proto::data_tree::Data {
-    pub fn as_bytes(&self) -> Option<&::prost::alloc::vec::Vec<u8>> {
-        if let proto::data_tree::Data::DataBytes(b) = &self {
-            Some(b)
-        } else {
-            None
-        }
     }
 }
 
@@ -304,6 +318,29 @@ impl From<DataFormat> for proto::Encoding {
 }
 
 // ===== helper functions =====
+
+// Parses a single streamed `Get` fragment into a data tree.
+//
+// Fragments are partial subtrees, so validation is skipped here; the merged
+// result is what callers operate on.
+fn parse_fragment(
+    yang_ctx: &'static yang5::context::Context,
+    format: DataFormat,
+    data: &proto::data_tree::Data,
+) -> Result<DataTree<'static>, Error> {
+    let bytes: &[u8] = match data {
+        proto::data_tree::Data::DataBytes(bytes) => bytes,
+        proto::data_tree::Data::DataString(string) => string.as_bytes(),
+    };
+    DataTree::parse_string(
+        yang_ctx,
+        bytes,
+        format,
+        DataParserFlags::NO_VALIDATION,
+        DataValidationFlags::PRESENT,
+    )
+    .map_err(Error::ParseData)
+}
 
 unsafe extern "C" fn ly_module_import_cb(
     module_name: *const c_char,
