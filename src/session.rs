@@ -11,7 +11,7 @@ use yang5::data::{Data, DataFormat, DataTree, DataValidationFlags};
 use yang5::schema::{SchemaNode, SchemaNodeKind};
 
 use crate::error::Error;
-use crate::grpc::{GrpcClient, proto};
+use crate::grpc::{DataType, GrpcClient, proto};
 use crate::parser::ParsedArgs;
 use crate::token::Commands;
 use crate::token_yang;
@@ -53,12 +53,7 @@ pub enum ConfigurationType {
 impl Session {
     pub fn new(use_pager: bool, mut grpc_client: GrpcClient) -> Session {
         let running = grpc_client
-            .get(
-                proto::get_request::DataType::Config,
-                DataFormat::LYB,
-                false,
-                None,
-            )
+            .get(DataType::Config, DataFormat::LYB, false, None)
             .expect("Failed to fetch running configuration");
 
         Session {
@@ -298,7 +293,7 @@ impl Session {
 
     pub fn get(
         &mut self,
-        data_type: proto::get_request::DataType,
+        data_type: DataType,
         format: DataFormat,
         with_defaults: bool,
         xpath: Option<String>,

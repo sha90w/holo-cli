@@ -24,6 +24,18 @@ pub mod proto {
 
 type StdError = Box<dyn std::error::Error + Send + Sync + 'static>;
 
+/// Category of data to retrieve from the daemon.
+///
+/// The northbound exposes two separate RPCs: server-streaming `GetState` for
+/// operational state and unary `GetConfig` for configuration. `All` fetches
+/// both and merges them into a single data tree.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum DataType {
+    State,
+    Config,
+    All,
+}
+
 // The order of the fields in this struct is important. They must be ordered
 // such that when `Client` is dropped the client is dropped before the runtime.
 // Not doing this will result in a deadlock when dropped. Rust drops struct
@@ -96,24 +108,56 @@ impl GrpcClient {
         }
     }
 
-    // Retrieves data from the daemon.
+    // Retrieves data of the requested type from the daemon.
     //
-    // The `Get` RPC is server-streaming: the response arrives as a sequence of
-    // independent, self-contained fragments (each a complete YANG document with
-    // its full ancestor spine). The fragments are merged into a single data
-    // tree, holding at most one fragment in memory at a time.
+    // State and configuration are fetched through separate RPCs and merged
+    // into a single data tree; `All` issues both.
     pub fn get(
         &mut self,
-        data_type: proto::get_request::DataType,
+        data_type: DataType,
         format: DataFormat,
         with_defaults: bool,
         xpath: Option<String>,
     ) -> Result<DataTree<'static>, Error> {
         let yang_ctx = YANG_CTX.get().unwrap();
+        let mut dtree = DataTree::new(yang_ctx);
+        match data_type {
+            DataType::Config => {
+                self.get_config(&mut dtree, format, with_defaults, xpath)?;
+            }
+            DataType::State => {
+                self.get_state(&mut dtree, format, with_defaults, xpath)?;
+            }
+            DataType::All => {
+                self.get_config(
+                    &mut dtree,
+                    format,
+                    with_defaults,
+                    xpath.clone(),
+                )?;
+                self.get_state(&mut dtree, format, with_defaults, xpath)?;
+            }
+        }
+        Ok(dtree)
+    }
+
+    // Retrieves state data, merging it into `dtree`.
+    //
+    // The `GetState` RPC is server-streaming: the response arrives as a
+    // sequence of independent, self-contained fragments (each a complete YANG
+    // document with its full ancestor spine). The fragments are merged one at
+    // a time, holding at most one in memory.
+    fn get_state(
+        &mut self,
+        dtree: &mut DataTree<'static>,
+        format: DataFormat,
+        with_defaults: bool,
+        xpath: Option<String>,
+    ) -> Result<(), Error> {
+        let yang_ctx = YANG_CTX.get().unwrap();
         let path = xpath.map(|x| proto::Path::from_xpath(&x));
         let mut stream = self
-            .rpc_sync_get(proto::GetRequest {
-                r#type: data_type as i32,
+            .rpc_sync_get_state(proto::GetStateRequest {
                 encoding: proto::Encoding::from(format) as i32,
                 with_defaults,
                 path,
@@ -121,7 +165,6 @@ impl GrpcClient {
             .map_err(Error::Backend)?
             .into_inner();
 
-        let mut dtree = DataTree::new(yang_ctx);
         while let Some(response) = self
             .runtime
             .block_on(stream.message())
@@ -137,7 +180,40 @@ impl GrpcClient {
             };
             dtree.merge(&fragment).expect("Failed to merge fragment");
         }
-        Ok(dtree)
+        Ok(())
+    }
+
+    // Retrieves configuration data, merging it into `dtree`.
+    //
+    // The `GetConfig` RPC is unary: the entire configuration subtree is
+    // returned in a single response.
+    fn get_config(
+        &mut self,
+        dtree: &mut DataTree<'static>,
+        format: DataFormat,
+        with_defaults: bool,
+        xpath: Option<String>,
+    ) -> Result<(), Error> {
+        let yang_ctx = YANG_CTX.get().unwrap();
+        let path = xpath.map(|x| proto::Path::from_xpath(&x));
+        let response = self
+            .rpc_sync_get_config(proto::GetConfigRequest {
+                encoding: proto::Encoding::from(format) as i32,
+                with_defaults,
+                path,
+            })
+            .map_err(Error::Backend)?
+            .into_inner();
+
+        if let Some(data) = response
+            .data
+            .and_then(|data| data.data)
+            .map(|data| parse_fragment(yang_ctx, format, &data))
+            .transpose()?
+        {
+            dtree.merge(&data).expect("Failed to merge configuration");
+        }
+        Ok(())
     }
 
     pub fn validate_candidate(
@@ -206,15 +282,23 @@ impl GrpcClient {
         self.runtime.block_on(self.client.get_schema(request))
     }
 
-    fn rpc_sync_get(
+    fn rpc_sync_get_state(
         &mut self,
-        request: proto::GetRequest,
+        request: proto::GetStateRequest,
     ) -> Result<
-        tonic::Response<tonic::Streaming<proto::GetResponse>>,
+        tonic::Response<tonic::Streaming<proto::GetStateResponse>>,
         tonic::Status,
     > {
         let request = tonic::Request::new(request);
-        self.runtime.block_on(self.client.get(request))
+        self.runtime.block_on(self.client.get_state(request))
+    }
+
+    fn rpc_sync_get_config(
+        &mut self,
+        request: proto::GetConfigRequest,
+    ) -> Result<tonic::Response<proto::GetConfigResponse>, tonic::Status> {
+        let request = tonic::Request::new(request);
+        self.runtime.block_on(self.client.get_config(request))
     }
 
     fn rpc_sync_commit(
@@ -280,7 +364,8 @@ impl proto::Path {
                     Some(pos) => {
                         let name = &segment[..pos];
                         let mut keys = HashMap::new();
-                        for kv in segment[pos..].split('[').filter(|s| !s.is_empty())
+                        for kv in
+                            segment[pos..].split('[').filter(|s| !s.is_empty())
                         {
                             let kv = kv.trim_end_matches(']');
                             if let Some(eq_pos) = kv.find('=') {

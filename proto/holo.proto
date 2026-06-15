@@ -32,16 +32,19 @@ service Northbound {
   // Retrieve the specified schema data from the target.
   rpc GetSchema(GetSchemaRequest) returns (GetSchemaResponse) {}
 
-  // Retrieve configuration data, state data or both from the target.
+  // Retrieve state data from the target.
   //
-  // This RPC is server-streaming: the result is delivered as a sequence of
+  // This RPC is server-streaming: the state data is delivered as a sequence of
   // independent messages ("fragments"). Each message is a complete,
   // self-contained YANG document carrying its full ancestor spine (containers,
   // list names, and keys) down to the data it holds. Messages may arrive in
   // arbitrary order and number; a client wanting the full result merges them
   // (e.g. via libyang merge), holding at most one fragment in memory at a time.
   // Concatenating the encoded payloads is NOT a valid single document.
-  rpc Get(GetRequest) returns (stream GetResponse) {}
+  rpc GetState(GetStateRequest) returns (stream GetStateResponse) {}
+
+  // Retrieve configuration data from the target.
+  rpc GetConfig(GetConfigRequest) returns (GetConfigResponse) {}
 
   // Validate the configuration without committing it.
   rpc Validate(ValidateRequest) returns (ValidateResponse) {}
@@ -114,46 +117,57 @@ message GetSchemaResponse {
 }
 
 //
-// RPC: Get()
+// RPC: GetState()
 //
-message GetRequest {
-  // Type of elements within the data tree.
-  enum DataType {
-    // All data elements.
-    ALL = 0;
-
-    // Config elements.
-    CONFIG = 1;
-
-    // State elements.
-    STATE = 2;
-  }
-
-  // The type of data being requested.
-  DataType type = 1;
-
+message GetStateRequest {
   // Encoding to be used.
-  Encoding encoding = 2;
+  Encoding encoding = 1;
 
   // Include implicit default nodes.
-  bool with_defaults = 3;
+  bool with_defaults = 2;
 
   // Target YANG path.
-  Path path = 4;
+  Path path = 3;
 }
 
-message GetResponse {
+message GetStateResponse {
   // Return values:
   // - grpc::StatusCode::OK: Success.
   // - grpc::StatusCode::INVALID_ARGUMENT: Invalid YANG data path.
 
-  // A single self-contained fragment of the requested data. See the Get() RPC
-  // documentation for the fragment contract.
+  // A single self-contained fragment of the requested data. See the GetState()
+  // RPC documentation for the fragment contract.
 
   // Timestamp in nanoseconds since Epoch.
   int64 timestamp = 1;
 
-  // The requested data.
+  // The requested state data.
+  DataTree data = 2;
+}
+
+//
+// RPC: GetConfig()
+//
+message GetConfigRequest {
+  // Encoding to be used.
+  Encoding encoding = 1;
+
+  // Include implicit default nodes.
+  bool with_defaults = 2;
+
+  // Target YANG path.
+  Path path = 3;
+}
+
+message GetConfigResponse {
+  // Return values:
+  // - grpc::StatusCode::OK: Success.
+  // - grpc::StatusCode::INVALID_ARGUMENT: Invalid YANG data path.
+
+  // Timestamp in nanoseconds since Epoch.
+  int64 timestamp = 1;
+
+  // The requested configuration data.
   DataTree data = 2;
 }
 
